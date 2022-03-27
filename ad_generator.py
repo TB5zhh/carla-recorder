@@ -20,9 +20,11 @@ import sys
 from IPython import embed
 from tqdm import tqdm
 import os
-from random import randint
-from palette import convert_rgb_to_mask
+fid = str(1)
 chk = True
+fn = "AD"
+txtfile = None
+print(fn)
 
 def build_folder(foldername):
     if os.path.exists(foldername):
@@ -30,21 +32,27 @@ def build_folder(foldername):
     else:
         os.makedirs(foldername)
 
-def path_generator(fn):
-    os.makedirs(fn, exist_ok=True)
-    ids = [int(i) for i in os.listdir(fn)]
-    if len(ids) == 0:
-        idx = 0
+def path_generator():
+    dirs = os.listdir(fn + "/")
+    dirs_id = []
+    for dir in dirs:
+        dirs_id.append(int(dir))
+    print("dirs:", dirs_id)
+    global fid
+    if len(dirs_id) > 0:
+        fid = str(max(dirs_id) + 1)
     else:
-        idx = max(ids) + 1
-
-    file_path = fn + "/" + str(idx)
-    rgb_path = file_path + "/rgb"
-    mask_path = file_path + "/mask"
-    os.makedirs(rgb_path, exist_ok=True)
-    os.makedirs(mask_path, exist_ok=True)
-
-    return idx
+        fid = str(1)
+    file_path = fn + "/" + fid
+    build_folder(file_path + "/mask_x")
+    build_folder(file_path + "/mask_v")
+    build_folder(file_path + "/rgb_x")
+    build_folder(file_path + "/rgb_v")
+    build_folder(file_path + "/depth_x")
+    build_folder(file_path + "/depth_v")
+    global txtfile
+    txtfile = open(file_path + "/path.txt", "a+")
+    return True
 
 try:
     sys.path.append(glob.glob('../carla/dist/carla-*%d.%d-%s.egg' % (
@@ -60,7 +68,7 @@ import random
 import time
 import logging
 import numpy as np
-from PIL import Image
+
 
 try:
     import pygame
@@ -122,7 +130,7 @@ class DisplayManager:
         return self.display != None
 
 class SensorManager:
-    def __init__(self, world, display_man, sensor_type, transform, attached, sensor_options, display_pos, save_dir='', fid=0):
+    def __init__(self, world, display_man, sensor_type, transform, attached, sensor_options, display_pos):
         self.surface = None
         self.world = world
         self.display_man = display_man
@@ -133,13 +141,11 @@ class SensorManager:
 
         self.time_processing = 0.0
         self.tics_processing = 0
-        self.fid = fid
-        self.save_dir = save_dir
 
         self.display_man.add_sensor(self)
 
     def init_sensor(self, sensor_type, transform, attached, sensor_options):
-        if sensor_type == 'RGBCamera':
+        if (sensor_type == 'xRGBCamera') or (sensor_type == 'vRGBCamera'):
             camera_bp = self.world.get_blueprint_library().find('sensor.camera.rgb')
             disp_size = self.display_man.get_display_size()
             camera_bp.set_attribute('image_size_x', str(disp_size[0]))
@@ -149,11 +155,16 @@ class SensorManager:
                 camera_bp.set_attribute(key, sensor_options[key])
 
             camera = self.world.spawn_actor(camera_bp, transform, attach_to=attached)
-            camera.listen(self.save_rgb_image)
+            if sensor_type == 'xRGBCamera':
+                global txtfile
+                txtfile.write("Infra Camera: " + str(transform) + "\n")
+                camera.listen(self.save_rgb_image_x)
+            else:
+                camera.listen(self.save_rgb_image_v)
 
             return camera
 
-        elif sensor_type == "SemanticCamera":
+        elif (sensor_type == "xSemanticCamera") or (sensor_type == "vSemanticCamera"):
             camera_bp = self.world.get_blueprint_library().find('sensor.camera.semantic_segmentation')
             disp_size = self.display_man.get_display_size()
             camera_bp.set_attribute('image_size_x', str(disp_size[0]))
@@ -163,7 +174,27 @@ class SensorManager:
                 camera_bp.set_attribute(key, sensor_options[key])
 
             camera = self.world.spawn_actor(camera_bp, transform, attach_to=attached)
-            camera.listen(self.save_semantic_image)
+            if sensor_type == "xSemanticCamera":
+                camera.listen(self.save_semantic_image_x)
+            else:
+                camera.listen(self.save_semantic_image_v)
+
+            return camera
+
+        elif (sensor_type == "xDepthCamera") or (sensor_type == "vDepthCamera"):
+            camera_bp = self.world.get_blueprint_library().find('sensor.camera.depth')
+            disp_size = self.display_man.get_display_size()
+            camera_bp.set_attribute('image_size_x', str(disp_size[0]))
+            camera_bp.set_attribute('image_size_y', str(disp_size[1]))
+
+            for key in sensor_options:
+                camera_bp.set_attribute(key, sensor_options[key])
+
+            camera = self.world.spawn_actor(camera_bp, transform, attach_to=attached)
+            if sensor_type == "xDepthCamera":
+                camera.listen(self.save_depth_image_x)
+            else:
+                camera.listen(self.save_depth_image_v)
 
             return camera
 
@@ -173,6 +204,7 @@ class SensorManager:
     def get_sensor(self):
         return self.sensor
 
+    ############################################## save data ###################################################
     def save_rgb_image(self, image):
         t_start = self.timer.time()
 
@@ -180,16 +212,26 @@ class SensorManager:
         array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
         array = np.reshape(array, (image.height, image.width, 4))
         array = array[:, :, :3]
-        if chk:
-            cv2.imwrite(self.save_dir + "/{}/rgb/{}.png".format(self.fid, str(self.tics_processing)), array)
-
         array = array[:, :, ::-1]
+
         if self.display_man.render_enabled():
             self.surface = pygame.surfarray.make_surface(array.swapaxes(0, 1))
 
         t_end = self.timer.time()
         self.time_processing += (t_end-t_start)
         self.tics_processing += 1
+        return array
+
+    def save_rgb_image_x(self, image):
+        array = self.save_rgb_image(self, image)
+        if chk:
+            cv2.imwrite(fn + "/{}/rgb_x/{}.png".format(fid, str(self.tics_processing)), array)
+
+    def save_rgb_image_v(self, image):
+        array = self.save_rgb_image(self, image)
+        txtfile.write(str(self.tics_processing) + ": " + str(self.sensor.get_transform()) + "\n")
+        if chk:
+            cv2.imwrite(fn + "/{}/rgb_v/{}.png".format(fid, str(self.tics_processing)), array)
 
     def save_semantic_image(self, image):
         t_start = self.timer.time()
@@ -199,10 +241,6 @@ class SensorManager:
         array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
         array = np.reshape(array, (image.height, image.width, 4))
         array = array[:, :, :3]
-
-        if chk:
-            cv2.imwrite(self.save_dir + "/{}/mask/{}.png".format(self.fid, str(self.tics_processing)), array)
-        
         array = array[:, :, ::-1]
         if self.display_man.render_enabled():
             self.surface = pygame.surfarray.make_surface(array.swapaxes(0, 1))
@@ -210,7 +248,43 @@ class SensorManager:
         t_end = self.timer.time()
         self.time_processing += (t_end-t_start)
         self.tics_processing += 1
+        return array
+
+    def save_semantic_image_x(self, image):
+        array = self.save_semantic_image(self, image)
+        if chk:
+            cv2.imwrite(fn + "/{}/mask_x/{}.png".format(fid, str(self.tics_processing)), array)
+
+    def save_semantic_image_v(self, image):
+        array = self.save_semantic_image(self, image)
+        if chk:
+            cv2.imwrite(fn + "/{}/mask_v/{}.png".format(fid, str(self.tics_processing)), array)
     
+    def save_depth_image(self, image):
+        t_start = self.timer.time()
+
+        image.convert(carla.ColorConverter.LogarithmicDepth)
+        array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+        array = np.reshape(array, (image.height, image.width, 4))
+        array = array[:, :, :3]
+        array = array[:, :, ::-1]
+        if self.display_man.render_enabled():
+            self.surface = pygame.surfarray.make_surface(array.swapaxes(0, 1))
+
+        t_end = self.timer.time()
+        self.time_processing += (t_end-t_start)
+        self.tics_processing += 1
+
+    def save_depth_image_x(self, image):
+        array = self.save_depth_image(self, image)
+        if chk:
+            cv2.imwrite(fn + "/{}/depth_x/{}.png".format(fid, str(self.tics_processing)), array)
+
+    def save_depth_image_v(self, image):
+        array = self.save_depth_image(self, image)
+        if chk:
+            cv2.imwrite(fn + "/{}/depth_v/{}.png".format(fid, str(self.tics_processing)), array)
+
 
     def render(self):
         if self.surface is not None:
@@ -220,7 +294,6 @@ class SensorManager:
     def destroy(self):
         self.sensor.destroy()
 
-from time import sleep
 def run_simulation(args, client):
     """This function performed one test run using the args parameters
     and connecting to the carla client passed.
@@ -256,8 +329,7 @@ def run_simulation(args, client):
                 return carla.WeatherParameters(cloudiness=0.0, precipitation=0.0, fog_density=0.0, sun_altitude_angle=0.0)
 
         print("weather id:", args.weather)
-        # weather = static_weather(randint(1,4))
-        weather = static_weather(1)
+        weather = static_weather(args.weather)
         world.set_weather(weather)
 
         traffic_manager = client.get_trafficmanager(args.tm_port)
@@ -282,46 +354,45 @@ def run_simulation(args, client):
 
         # Instanciating the vehicle to which we attached the sensors
         bp = world.get_blueprint_library().filter('charger_2020')[0]
-        # embed()
         spawn_point_id = random.randint(0, len(world.get_map().get_spawn_points())-1)
-        # spawn_point_id = 81
+        spawn_point_id = 127
         spawn_point = world.get_map().get_spawn_points()[spawn_point_id]
-        # embed()   
         print("id:", spawn_point_id, "spawn_point:", spawn_point)
-        print(spawn_point.rotation)
-        vehicle = world.spawn_actor(bp, carla.Transform(carla.Location(x=spawn_point.location.x, y=spawn_point.location.y, z=0.1), spawn_point.rotation))
+        vehicle = world.spawn_actor(bp, spawn_point)
         vehicles_list.append(vehicle)
         vehicle.set_autopilot(True)
 
+        # set location and posture of infra sensors
+        infra_sensor_loc = carla.Transform(carla.Location(x=110.0, y=15, z=5))
+        infra_sensor_pos = carla.Rotation(pitch=0.000000, yaw=90, roll=0.000000)
+
         # Display Manager organize all the sensors an its display in a window
         # If can easily configure the grid and the total window size
-        grid_size = [2, 1]
+        grid_size = [3, 2]
         display_manager = DisplayManager(grid_size=grid_size, window_size=[args.width*grid_size[1], args.height*grid_size[0]])
 
         # Then, SensorManager can be used to spawn RGBCamera, LiDARs and SemanticLiDARs as needed
         # and assign each of them to a grid position, 
-        SensorManager(world, display_manager, 'RGBCamera', carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)), 
-                      vehicle, {}, display_pos=[0, 0], save_dir=args.save_dir, fid=args.idx)
-        SensorManager(world, display_manager, 'SemanticCamera', carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)), 
-                      vehicle, {}, display_pos=[1, 0], save_dir=args.save_dir, fid=args.idx)
+        SensorManager(world, display_manager, 'vRGBCamera', carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)), 
+                      vehicle, {}, display_pos=[0, 0])
+        SensorManager(world, display_manager, 'vSemanticCamera', carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)), 
+                      vehicle, {}, display_pos=[1, 0])
+        SensorManager(world, display_manager, 'vRGBCamera', carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)), 
+                      vehicle, {}, display_pos=[2, 0])
+        SensorManager(world, display_manager, 'xSemanticCamera', infra_sensor_loc, infra_sensor_pos, 
+                      None, {}, display_pos=[1, 0])
+        SensorManager(world, display_manager, 'xRGBCamera', infra_sensor_loc, infra_sensor_pos, 
+                      None, {}, display_pos=[1, 1])
+        SensorManager(world, display_manager, 'xSemanticCamera', infra_sensor_loc, infra_sensor_pos, 
+                      None, {}, display_pos=[1, 2])
         #######################################################################################################################################################
         # # generate obstacle
 
-        # # embed()
-        # # ob_bp = world.get_blueprint_library().find('static.prop.bottle')
-        # ob_bp = world.get_blueprint_library().find('static.prop.container')
-        # # for i in world.get_map().get_spawn_points():
-        # #     ob_list.append(world.spawn_actor(ob_bp, i))
-        # distance = randint(30, 45)
-        # print(f"distance: {distance}")
-        # if spawn_point.rotation.yaw < 45 and spawn_point.rotation.yaw > -45:
-        #     ob = world.spawn_actor(ob_bp, carla.Transform(carla.Location(x=spawn_point.location.x + distance, y=spawn_point.location.y, z=0)))
-        # elif spawn_point.rotation.yaw > 45 and spawn_point.rotation.yaw < 135:
-        #     ob = world.spawn_actor(ob_bp, carla.Transform(carla.Location(x=spawn_point.location.x, y=spawn_point.location.y + distance, z=0)))
-        # elif spawn_point.rotation.yaw > 135 or spawn_point.rotation.yaw < -135:
-        #     ob = world.spawn_actor(ob_bp, carla.Transform(carla.Location(x=spawn_point.location.x - distance, y=spawn_point.location.y, z=0)))
-        # elif spawn_point.rotation.yaw < -45 and spawn_point.rotation.yaw > -135:
-        #     ob = world.spawn_actor(ob_bp, carla.Transform(carla.Location(x=spawn_point.location.x, y=spawn_point.location.y - distance, z=0)))
+        # embed()
+        # ob_bp = world.get_blueprint_library().find('static.prop.bottle')
+        # ob_bp = world.get_blueprint_library().find('static.prop.vendingmachine')
+
+        # ob = world.spawn_actor(ob_bp, carla.Transform(carla.Location(x=32, y=13, z=0)))
         # ob_list.append(ob)
         # print(ob.id)
 
@@ -484,8 +555,7 @@ def run_simulation(args, client):
         #Simulation loop
         call_exit = False
         time_init_sim = timer.time()
-        for i in tqdm(range(45)):
-        # while True:
+        for i in tqdm(range(3600)):
             # Carla Tick
             if args.sync:
                 world.tick()
@@ -507,7 +577,6 @@ def run_simulation(args, client):
                 break
 
     finally:
-        sleep(1)
         if display_manager:
             display_manager.destroy()
 
@@ -555,14 +624,9 @@ def get_actor_blueprints(world, filter, generation):
         return []
 
 
-def main(idx=None):
+def main():
     argparser = argparse.ArgumentParser(
         description='CARLA Sensor tutorial')
-    argparser.add_argument(
-        '--save-dir',
-        type=str,
-        default='new'
-    )
     argparser.add_argument(
         '--host',
         metavar='H',
@@ -679,8 +743,6 @@ def main(idx=None):
         help='Activate no rendering mode')
 
     args = argparser.parse_args()
-    if idx is not None:
-        args.idx = path_generator(args.save_dir)
 
     args.width, args.height = [int(x) for x in args.res.split('x')]
 
@@ -695,9 +757,8 @@ def main(idx=None):
     except KeyboardInterrupt:
         print('\nCancelled by user. Bye!')
 
-from time import sleep
 
 if __name__ == '__main__':
-    for i in range(1000):
-        main(i)
-        sleep(1)
+    if chk:
+        chk = path_generator()
+    main()
