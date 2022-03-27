@@ -22,7 +22,7 @@ from tqdm import tqdm
 import os
 fid = str(1)
 chk = True
-fn = "AD"
+fn = "ADtiao"
 txtfile = None
 print(fn)
 
@@ -156,8 +156,9 @@ class SensorManager:
 
             camera = self.world.spawn_actor(camera_bp, transform, attach_to=attached)
             if sensor_type == 'xRGBCamera':
-                global txtfile
-                txtfile.write("Infra Camera: " + str(transform) + "\n")
+                if chk:
+                    global txtfile
+                    txtfile.write("Infra Camera: " + str(transform) + "\n")
                 camera.listen(self.save_rgb_image_x)
             else:
                 camera.listen(self.save_rgb_image_v)
@@ -223,15 +224,15 @@ class SensorManager:
         return array
 
     def save_rgb_image_x(self, image):
-        array = self.save_rgb_image(self, image)
+        array = self.save_rgb_image(image)
         if chk:
             cv2.imwrite(fn + "/{}/rgb_x/{}.png".format(fid, str(self.tics_processing)), array)
 
     def save_rgb_image_v(self, image):
-        array = self.save_rgb_image(self, image)
-        txtfile.write(str(self.tics_processing) + ": " + str(self.sensor.get_transform()) + "\n")
+        array = self.save_rgb_image(image)
         if chk:
             cv2.imwrite(fn + "/{}/rgb_v/{}.png".format(fid, str(self.tics_processing)), array)
+            txtfile.write(str(self.tics_processing) + ": " + str(self.sensor.get_transform()) + "\n")
 
     def save_semantic_image(self, image):
         t_start = self.timer.time()
@@ -251,12 +252,12 @@ class SensorManager:
         return array
 
     def save_semantic_image_x(self, image):
-        array = self.save_semantic_image(self, image)
+        array = self.save_semantic_image(image)
         if chk:
             cv2.imwrite(fn + "/{}/mask_x/{}.png".format(fid, str(self.tics_processing)), array)
 
     def save_semantic_image_v(self, image):
-        array = self.save_semantic_image(self, image)
+        array = self.save_semantic_image(image)
         if chk:
             cv2.imwrite(fn + "/{}/mask_v/{}.png".format(fid, str(self.tics_processing)), array)
     
@@ -274,14 +275,15 @@ class SensorManager:
         t_end = self.timer.time()
         self.time_processing += (t_end-t_start)
         self.tics_processing += 1
+        return array
 
     def save_depth_image_x(self, image):
-        array = self.save_depth_image(self, image)
+        array = self.save_depth_image(image)
         if chk:
             cv2.imwrite(fn + "/{}/depth_x/{}.png".format(fid, str(self.tics_processing)), array)
 
     def save_depth_image_v(self, image):
-        array = self.save_depth_image(self, image)
+        array = self.save_depth_image(image)
         if chk:
             cv2.imwrite(fn + "/{}/depth_v/{}.png".format(fid, str(self.tics_processing)), array)
 
@@ -363,8 +365,7 @@ def run_simulation(args, client):
         vehicle.set_autopilot(True)
 
         # set location and posture of infra sensors
-        infra_sensor_loc = carla.Transform(carla.Location(x=110.0, y=15, z=5))
-        infra_sensor_pos = carla.Rotation(pitch=0.000000, yaw=90, roll=0.000000)
+        infra_sensor_pos = carla.Transform(carla.Location(x=-45, y=90, z=5), carla.Rotation(pitch=0.000000, yaw=-90, roll=0.000000))
 
         # Display Manager organize all the sensors an its display in a window
         # If can easily configure the grid and the total window size
@@ -377,14 +378,14 @@ def run_simulation(args, client):
                       vehicle, {}, display_pos=[0, 0])
         SensorManager(world, display_manager, 'vSemanticCamera', carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)), 
                       vehicle, {}, display_pos=[1, 0])
-        SensorManager(world, display_manager, 'vRGBCamera', carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)), 
+        SensorManager(world, display_manager, 'vDepthCamera', carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)), 
                       vehicle, {}, display_pos=[2, 0])
-        SensorManager(world, display_manager, 'xSemanticCamera', infra_sensor_loc, infra_sensor_pos, 
-                      None, {}, display_pos=[1, 0])
-        SensorManager(world, display_manager, 'xRGBCamera', infra_sensor_loc, infra_sensor_pos, 
+        SensorManager(world, display_manager, 'xRGBCamera', infra_sensor_pos, 
+                      None, {}, display_pos=[0, 1])
+        SensorManager(world, display_manager, 'xSemanticCamera', infra_sensor_pos, 
                       None, {}, display_pos=[1, 1])
-        SensorManager(world, display_manager, 'xSemanticCamera', infra_sensor_loc, infra_sensor_pos, 
-                      None, {}, display_pos=[1, 2])
+        SensorManager(world, display_manager, 'xDepthCamera', infra_sensor_pos, 
+                      None, {}, display_pos=[2, 1])
         #######################################################################################################################################################
         # # generate obstacle
 
@@ -751,14 +752,13 @@ def main():
     try:
         client = carla.Client(args.host, args.port)
         client.set_timeout(5.0)
-
+        
         run_simulation(args, client)
 
     except KeyboardInterrupt:
         print('\nCancelled by user. Bye!')
 
-
 if __name__ == '__main__':
     if chk:
-        chk = path_generator()
+        _ = path_generator()
     main()
