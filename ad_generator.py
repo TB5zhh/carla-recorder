@@ -225,11 +225,13 @@ class SensorManager:
 
     def save_rgb_image_x(self, image):
         array = self.save_rgb_image(image)
+        array = array[:, :, ::-1]
         if chk:
             cv2.imwrite(fn + "/{}/rgb_x/{}.png".format(fid, str(self.tics_processing)), array)
 
     def save_rgb_image_v(self, image):
         array = self.save_rgb_image(image)
+        array = array[:, :, ::-1]
         if chk:
             cv2.imwrite(fn + "/{}/rgb_v/{}.png".format(fid, str(self.tics_processing)), array)
             txtfile.write(str(self.tics_processing) + ": " + str(self.sensor.get_transform()) + "\n")
@@ -253,11 +255,13 @@ class SensorManager:
 
     def save_semantic_image_x(self, image):
         array = self.save_semantic_image(image)
+        array = array[:, :, ::-1]
         if chk:
             cv2.imwrite(fn + "/{}/mask_x/{}.png".format(fid, str(self.tics_processing)), array)
 
     def save_semantic_image_v(self, image):
         array = self.save_semantic_image(image)
+        array = array[:, :, ::-1]
         if chk:
             cv2.imwrite(fn + "/{}/mask_v/{}.png".format(fid, str(self.tics_processing)), array)
     
