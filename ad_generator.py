@@ -268,7 +268,7 @@ class SensorManager:
     def save_depth_image(self, image):
         t_start = self.timer.time()
 
-        image.convert(carla.ColorConverter.LogarithmicDepth)
+        # image.convert(carla.ColorConverter.LogarithmicDepth)
         array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
         array = np.reshape(array, (image.height, image.width, 4))
         array = array[:, :, :3]
@@ -283,11 +283,13 @@ class SensorManager:
 
     def save_depth_image_x(self, image):
         array = self.save_depth_image(image)
+        # array = array[:, :, ::-1]
         if chk:
             cv2.imwrite(fn + "/{}/depth_x/{}.png".format(fid, str(self.tics_processing)), array)
 
     def save_depth_image_v(self, image):
         array = self.save_depth_image(image)
+        # array = array[:, :, ::-1]
         if chk:
             cv2.imwrite(fn + "/{}/depth_v/{}.png".format(fid, str(self.tics_processing)), array)
 
