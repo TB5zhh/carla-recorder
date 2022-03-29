@@ -5,7 +5,6 @@
 #
 # This work is licensed under the terms of the MIT license.
 # For a copy, see <https://opensource.org/licenses/MIT>.
-
 """
 Script that render multiple sensors in the same pygame window
 
@@ -20,17 +19,21 @@ import sys
 from IPython import embed
 from tqdm import tqdm
 import os
+
 fid = str(1)
 chk = True
-fn = "ADtiao"
+fn = "6view_with_anomaly"
+os.makedirs(fn, exist_ok=True)
 txtfile = None
 print(fn)
+
 
 def build_folder(foldername):
     if os.path.exists(foldername):
         print("Folder exists!")
     else:
         os.makedirs(foldername)
+
 
 def path_generator():
     dirs = os.listdir(fn + "/")
@@ -54,11 +57,11 @@ def path_generator():
     txtfile = open(file_path + "/path.txt", "a+")
     return True
 
+
 try:
-    sys.path.append(glob.glob('../carla/dist/carla-*%d.%d-%s.egg' % (
-        sys.version_info.major,
-        sys.version_info.minor,
-        'win-amd64' if os.name == 'nt' else 'linux-x86_64'))[0])
+    sys.path.append(
+        glob.glob('../carla/dist/carla-*%d.%d-%s.egg' %
+                  (sys.version_info.major, sys.version_info.minor, 'win-amd64' if os.name == 'nt' else 'linux-x86_64'))[0])
 except IndexError:
     pass
 
@@ -69,7 +72,6 @@ import time
 import logging
 import numpy as np
 
-
 try:
     import pygame
     from pygame.locals import K_ESCAPE
@@ -77,7 +79,9 @@ try:
 except ImportError:
     raise RuntimeError('cannot import pygame, make sure pygame package is installed')
 
+
 class CustomTimer:
+
     def __init__(self):
         try:
             self.timer = time.perf_counter
@@ -87,7 +91,9 @@ class CustomTimer:
     def time(self):
         return self.timer()
 
+
 class DisplayManager:
+
     def __init__(self, grid_size, window_size):
         pygame.init()
         pygame.font.init()
@@ -101,7 +107,7 @@ class DisplayManager:
         return [int(self.window_size[0]), int(self.window_size[1])]
 
     def get_display_size(self):
-        return [int(self.window_size[0]/self.grid_size[1]), int(self.window_size[1]/self.grid_size[0])]
+        return [int(self.window_size[0] / self.grid_size[1]), int(self.window_size[1] / self.grid_size[0])]
 
     def get_display_offset(self, gridPos):
         dis_size = self.get_display_size()
@@ -129,7 +135,9 @@ class DisplayManager:
     def render_enabled(self):
         return self.display != None
 
+
 class SensorManager:
+
     def __init__(self, world, display_man, sensor_type, transform, attached, sensor_options, display_pos):
         self.surface = None
         self.world = world
@@ -219,7 +227,7 @@ class SensorManager:
             self.surface = pygame.surfarray.make_surface(array.swapaxes(0, 1))
 
         t_end = self.timer.time()
-        self.time_processing += (t_end-t_start)
+        self.time_processing += (t_end - t_start)
         self.tics_processing += 1
         return array
 
@@ -249,7 +257,7 @@ class SensorManager:
             self.surface = pygame.surfarray.make_surface(array.swapaxes(0, 1))
 
         t_end = self.timer.time()
-        self.time_processing += (t_end-t_start)
+        self.time_processing += (t_end - t_start)
         self.tics_processing += 1
         return array
 
@@ -264,7 +272,7 @@ class SensorManager:
         array = array[:, :, ::-1]
         if chk:
             cv2.imwrite(fn + "/{}/mask_v/{}.png".format(fid, str(self.tics_processing)), array)
-    
+
     def save_depth_image(self, image):
         t_start = self.timer.time()
 
@@ -277,22 +285,21 @@ class SensorManager:
             self.surface = pygame.surfarray.make_surface(array.swapaxes(0, 1))
 
         t_end = self.timer.time()
-        self.time_processing += (t_end-t_start)
+        self.time_processing += (t_end - t_start)
         self.tics_processing += 1
         return array
 
     def save_depth_image_x(self, image):
         array = self.save_depth_image(image)
-        # array = array[:, :, ::-1]
+        array = array[:, :, ::-1]
         if chk:
             cv2.imwrite(fn + "/{}/depth_x/{}.png".format(fid, str(self.tics_processing)), array)
 
     def save_depth_image_v(self, image):
         array = self.save_depth_image(image)
-        # array = array[:, :, ::-1]
+        array = array[:, :, ::-1]
         if chk:
             cv2.imwrite(fn + "/{}/depth_v/{}.png".format(fid, str(self.tics_processing)), array)
-
 
     def render(self):
         if self.surface is not None:
@@ -301,6 +308,7 @@ class SensorManager:
 
     def destroy(self):
         self.sensor.destroy()
+
 
 def run_simulation(args, client):
     """This function performed one test run using the args parameters
@@ -325,6 +333,7 @@ def run_simulation(args, client):
         # Getting the world and
         world = client.get_world()
         print(client.get_available_maps())
+
         # weather manager
         def static_weather(id):
             if id == 1:
@@ -362,7 +371,7 @@ def run_simulation(args, client):
 
         # Instanciating the vehicle to which we attached the sensors
         bp = world.get_blueprint_library().filter('charger_2020')[0]
-        spawn_point_id = random.randint(0, len(world.get_map().get_spawn_points())-1)
+        spawn_point_id = random.randint(0, len(world.get_map().get_spawn_points()) - 1)
         spawn_point_id = 127
         spawn_point = world.get_map().get_spawn_points()[spawn_point_id]
         print("id:", spawn_point_id, "spawn_point:", spawn_point)
@@ -376,32 +385,49 @@ def run_simulation(args, client):
         # Display Manager organize all the sensors an its display in a window
         # If can easily configure the grid and the total window size
         grid_size = [3, 2]
-        display_manager = DisplayManager(grid_size=grid_size, window_size=[args.width*grid_size[1], args.height*grid_size[0]])
+        display_manager = DisplayManager(grid_size=grid_size, window_size=[args.width * grid_size[1], args.height * grid_size[0]])
 
         # Then, SensorManager can be used to spawn RGBCamera, LiDARs and SemanticLiDARs as needed
-        # and assign each of them to a grid position, 
-        SensorManager(world, display_manager, 'vRGBCamera', carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)), 
-                      vehicle, {}, display_pos=[0, 0])
-        SensorManager(world, display_manager, 'vSemanticCamera', carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)), 
-                      vehicle, {}, display_pos=[1, 0])
-        SensorManager(world, display_manager, 'vDepthCamera', carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)), 
-                      vehicle, {}, display_pos=[2, 0])
-        SensorManager(world, display_manager, 'xRGBCamera', infra_sensor_pos, 
-                      None, {}, display_pos=[0, 1])
-        SensorManager(world, display_manager, 'xSemanticCamera', infra_sensor_pos, 
-                      None, {}, display_pos=[1, 1])
-        SensorManager(world, display_manager, 'xDepthCamera', infra_sensor_pos, 
-                      None, {}, display_pos=[2, 1])
+        # and assign each of them to a grid position,
+        SensorManager(world,
+                      display_manager,
+                      'vRGBCamera',
+                      carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)),
+                      vehicle, {},
+                      display_pos=[0, 0])
+        SensorManager(world,
+                      display_manager,
+                      'vSemanticCamera',
+                      carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)),
+                      vehicle, {},
+                      display_pos=[1, 0])
+        SensorManager(world,
+                      display_manager,
+                      'vDepthCamera',
+                      carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)),
+                      vehicle, {},
+                      display_pos=[2, 0])
+        SensorManager(world, display_manager, 'xRGBCamera', infra_sensor_pos, None, {}, display_pos=[0, 1])
+        SensorManager(world, display_manager, 'xSemanticCamera', infra_sensor_pos, None, {}, display_pos=[1, 1])
+        SensorManager(world, display_manager, 'xDepthCamera', infra_sensor_pos, None, {}, display_pos=[2, 1])
         #######################################################################################################################################################
         # # generate obstacle
 
         # embed()
-        # ob_bp = world.get_blueprint_library().find('static.prop.bottle')
-        # ob_bp = world.get_blueprint_library().find('static.prop.vendingmachine')
-
-        # ob = world.spawn_actor(ob_bp, carla.Transform(carla.Location(x=32, y=13, z=0)))
-        # ob_list.append(ob)
-        # print(ob.id)
+        ob_bp = world.get_blueprint_library().find('static.prop.chair')
+        # for i in world.get_map().get_spawn_points():
+        #     ob_list.append(world.spawn_actor(ob_bp, i))
+        distance = random.randint(30, 45)
+        print(f"distance: {distance}")
+        if spawn_point.rotation.yaw < 45 and spawn_point.rotation.yaw > -45:
+            ob = world.spawn_actor(ob_bp, carla.Transform(carla.Location(x=spawn_point.location.x + distance, y=spawn_point.location.y, z=0)))
+        elif spawn_point.rotation.yaw > 45 and spawn_point.rotation.yaw < 135:
+            ob = world.spawn_actor(ob_bp, carla.Transform(carla.Location(x=spawn_point.location.x, y=spawn_point.location.y + distance, z=0)))
+        elif spawn_point.rotation.yaw > 135 or spawn_point.rotation.yaw < -135:
+            ob = world.spawn_actor(ob_bp, carla.Transform(carla.Location(x=spawn_point.location.x - distance, y=spawn_point.location.y, z=0)))
+        elif spawn_point.rotation.yaw < -45 and spawn_point.rotation.yaw > -135:
+            ob = world.spawn_actor(ob_bp, carla.Transform(carla.Location(x=spawn_point.location.x, y=spawn_point.location.y - distance, z=0)))
+        ob_list.append(ob)
 
         if args.no_rendering:
             settings.no_rendering_mode = True
@@ -459,8 +485,7 @@ def run_simulation(args, client):
                 blueprint.set_attribute('role_name', 'autopilot')
 
             # spawn the cars and set their autopilot and light state all together
-            batch.append(SpawnActor(blueprint, transform)
-                .then(SetAutopilot(FutureActor, True, traffic_manager.get_port())))
+            batch.append(SpawnActor(blueprint, transform).then(SetAutopilot(FutureActor, True, traffic_manager.get_port())))
 
         for response in client.apply_batch_sync(batch, synchronous_master):
             if response.error:
@@ -478,8 +503,8 @@ def run_simulation(args, client):
         # Spawn Walkers
         # -------------
         # some settings
-        percentagePedestriansRunning = 0.2      # how many pedestrians will run
-        percentagePedestriansCrossing = 0.5     # how many pedestrians will walk through the road
+        percentagePedestriansRunning = 0.2  # how many pedestrians will run
+        percentagePedestriansCrossing = 0.5  # how many pedestrians will walk through the road
         if args.seedw:
             world.set_pedestrians_seed(args.seedw)
             random.seed(args.seedw)
@@ -552,7 +577,7 @@ def run_simulation(args, client):
             # set walk to random point
             all_actors[i].go_to_location(world.get_random_location_from_navigation())
             # max speed
-            all_actors[i].set_max_speed(float(walker_speed[int(i/2)]))
+            all_actors[i].set_max_speed(float(walker_speed[int(i / 2)]))
 
         print('spawned %d vehicles and %d walkers, press Ctrl+C to exit.' % (len(vehicles_list), len(walkers_list)))
 
@@ -605,6 +630,7 @@ def run_simulation(args, client):
 
         world.apply_settings(original_settings)
 
+
 def get_actor_blueprints(world, filter, generation):
     # embed()
     bps = world.get_blueprint_library().filter(filter)
@@ -632,34 +658,13 @@ def get_actor_blueprints(world, filter, generation):
 
 
 def main():
-    argparser = argparse.ArgumentParser(
-        description='CARLA Sensor tutorial')
-    argparser.add_argument(
-        '--host',
-        metavar='H',
-        default='localhost',
-        help='IP of the host server (default: 127.0.0.1)')
-    argparser.add_argument(
-        '-p', '--port',
-        metavar='P',
-        default=2000,
-        type=int,
-        help='TCP port to listen to (default: 2000)')
-    argparser.add_argument(
-        '--sync',
-        action='store_true',
-        help='Synchronous mode execution')
-    argparser.add_argument(
-        '--async',
-        dest='sync',
-        action='store_false',
-        help='Asynchronous mode execution')
+    argparser = argparse.ArgumentParser(description='CARLA Sensor tutorial')
+    argparser.add_argument('--host', metavar='H', default='localhost', help='IP of the host server (default: 127.0.0.1)')
+    argparser.add_argument('-p', '--port', metavar='P', default=2000, type=int, help='TCP port to listen to (default: 2000)')
+    argparser.add_argument('--sync', action='store_true', help='Synchronous mode execution')
+    argparser.add_argument('--async', dest='sync', action='store_false', help='Asynchronous mode execution')
     argparser.set_defaults(sync=True)
-    argparser.add_argument(
-        '--res',
-        metavar='WIDTHxHEIGHT',
-        default='1280x720',
-        help='window resolution (default: 1280x720)')
+    argparser.add_argument('--res', metavar='WIDTHxHEIGHT', default='1280x720', help='window resolution (default: 1280x720)')
     argparser.add_argument(
         '--weather',
         metavar='WEATHER',
@@ -667,87 +672,31 @@ def main():
         # weather list: []
         help='weather (default: rainy day)')
 
-    argparser.add_argument(
-        '-n', '--number-of-vehicles',
-        metavar='N',
-        default=0,
-        type=int,
-        help='Number of vehicles (default: 10)')
-    argparser.add_argument(
-        '-w', '--number-of-walkers',
-        metavar='W',
-        default=0,
-        type=int,
-        help='Number of walkers (default: 10)')
-    argparser.add_argument(
-        '--safe',
-        action='store_true',
-        help='Avoid spawning vehicles prone to accidents')
-    argparser.add_argument(
-        '--filterv',
-        metavar='PATTERN',
-        default='vehicle.*',
-        help='Filter vehicle model (default: "vehicle.*")')
-    argparser.add_argument(
-        '--generationv',
-        metavar='G',
-        default='All',
-        help='restrict to certain vehicle generation (values: "1","2","All" - default: "All")')
-    argparser.add_argument(
-        '--filterw',
-        metavar='PATTERN',
-        default='walker.pedestrian.*',
-        help='Filter pedestrian type (default: "walker.pedestrian.*")')
-    argparser.add_argument(
-        '--generationw',
-        metavar='G',
-        default='2',
-        help='restrict to certain pedestrian generation (values: "1","2","All" - default: "2")')
-    argparser.add_argument(
-        '--tm-port',
-        metavar='P',
-        default=8000,
-        type=int,
-        help='Port to communicate with TM (default: 8000)')
-    argparser.add_argument(
-        '--asynch',
-        action='store_true',
-        help='Activate asynchronous mode execution')
-    argparser.add_argument(
-        '--hybrid',
-        action='store_true',
-        help='Activate hybrid mode for Traffic Manager')
-    argparser.add_argument(
-        '-s', '--seed',
-        metavar='S',
-        type=int,
-        help='Set random device seed and deterministic mode for Traffic Manager')
-    argparser.add_argument(
-        '--seedw',
-        metavar='S',
-        default=0,
-        type=int,
-        help='Set the seed for pedestrians module')
-    argparser.add_argument(
-        '--car-lights-on',
-        action='store_true',
-        default=False,
-        help='Enable automatic car light management')
-    argparser.add_argument(
-        '--hero',
-        action='store_true',
-        default=False,
-        help='Set one of the vehicles as hero')
-    argparser.add_argument(
-        '--respawn',
-        action='store_true',
-        default=False,
-        help='Automatically respawn dormant vehicles (only in large maps)')
-    argparser.add_argument(
-        '--no-rendering',
-        action='store_true',
-        default=False,
-        help='Activate no rendering mode')
+    argparser.add_argument('-n', '--number-of-vehicles', metavar='N', default=0, type=int, help='Number of vehicles (default: 10)')
+    argparser.add_argument('-w', '--number-of-walkers', metavar='W', default=0, type=int, help='Number of walkers (default: 10)')
+    argparser.add_argument('--safe', action='store_true', help='Avoid spawning vehicles prone to accidents')
+    argparser.add_argument('--filterv', metavar='PATTERN', default='vehicle.*', help='Filter vehicle model (default: "vehicle.*")')
+    argparser.add_argument('--generationv',
+                           metavar='G',
+                           default='All',
+                           help='restrict to certain vehicle generation (values: "1","2","All" - default: "All")')
+    argparser.add_argument('--filterw',
+                           metavar='PATTERN',
+                           default='walker.pedestrian.*',
+                           help='Filter pedestrian type (default: "walker.pedestrian.*")')
+    argparser.add_argument('--generationw',
+                           metavar='G',
+                           default='2',
+                           help='restrict to certain pedestrian generation (values: "1","2","All" - default: "2")')
+    argparser.add_argument('--tm-port', metavar='P', default=8000, type=int, help='Port to communicate with TM (default: 8000)')
+    argparser.add_argument('--asynch', action='store_true', help='Activate asynchronous mode execution')
+    argparser.add_argument('--hybrid', action='store_true', help='Activate hybrid mode for Traffic Manager')
+    argparser.add_argument('-s', '--seed', metavar='S', type=int, help='Set random device seed and deterministic mode for Traffic Manager')
+    argparser.add_argument('--seedw', metavar='S', default=0, type=int, help='Set the seed for pedestrians module')
+    argparser.add_argument('--car-lights-on', action='store_true', default=False, help='Enable automatic car light management')
+    argparser.add_argument('--hero', action='store_true', default=False, help='Set one of the vehicles as hero')
+    argparser.add_argument('--respawn', action='store_true', default=False, help='Automatically respawn dormant vehicles (only in large maps)')
+    argparser.add_argument('--no-rendering', action='store_true', default=False, help='Activate no rendering mode')
 
     args = argparser.parse_args()
 
@@ -758,11 +707,12 @@ def main():
     try:
         client = carla.Client(args.host, args.port)
         client.set_timeout(5.0)
-        
+
         run_simulation(args, client)
 
     except KeyboardInterrupt:
         print('\nCancelled by user. Bye!')
+
 
 if __name__ == '__main__':
     if chk:
