@@ -508,39 +508,39 @@ def run_simulation(args, client):
             parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
             ob_bp = world.get_blueprint_library().find('static.prop.plastictable')
         print('debug!!', spawn_point.rotation.yaw)
-        # if spawn_point.rotation.yaw < 45 and spawn_point.rotation.yaw > -45:
-        #     ob = world.spawn_actor(
-        #         ob_bp,
-        #         carla.Transform(
-        #             carla.Location(x=spawn_point.location.x + anomaly_distance, y=spawn_point.location.y + random.random() * 2 - 1 - calib,
-        #                            z=parameters['z']),
-        #             carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
-        #         ))
-        # elif spawn_point.rotation.yaw > 45 and spawn_point.rotation.yaw < 135:
-        #     ob = world.spawn_actor(
-        #         ob_bp,
-        #         carla.Transform(
-        #             carla.Location(x=spawn_point.location.x + random.random() * 2 - 1 - calib, y=spawn_point.location.y + anomaly_distance,
-        #                            z=parameters['z']),
-        #             carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
-        #         ))
-        # elif spawn_point.rotation.yaw > 135 or spawn_point.rotation.yaw < -135:
-        #     ob = world.spawn_actor(
-        #         ob_bp,
-        #         carla.Transform(
-        #             carla.Location(x=spawn_point.location.x - anomaly_distance, y=spawn_point.location.y + random.random() * 2 - 1 + calib,
-        #                            z=parameters['z']),
-        #             carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
-        #         ))
-        # elif spawn_point.rotation.yaw < -45 and spawn_point.rotation.yaw > -135:
-        #     ob = world.spawn_actor(
-        #         ob_bp,
-        #         carla.Transform(
-        #             carla.Location(x=spawn_point.location.x + random.random() * 2 - 1 + calib, y=spawn_point.location.y - anomaly_distance,
-        #                            z=parameters['z']),
-        #             carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
-        #         ))
-        # ob_list.append(ob)
+        if spawn_point.rotation.yaw < 45 and spawn_point.rotation.yaw > -45:
+            ob = world.spawn_actor(
+                ob_bp,
+                carla.Transform(
+                    carla.Location(x=spawn_point.location.x + anomaly_distance, y=spawn_point.location.y + random.random() * 2 - 1 - calib,
+                                   z=parameters['z']),
+                    carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
+                ))
+        elif spawn_point.rotation.yaw > 45 and spawn_point.rotation.yaw < 135:
+            ob = world.spawn_actor(
+                ob_bp,
+                carla.Transform(
+                    carla.Location(x=spawn_point.location.x + random.random() * 2 - 1 - calib, y=spawn_point.location.y + anomaly_distance,
+                                   z=parameters['z']),
+                    carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
+                ))
+        elif spawn_point.rotation.yaw > 135 or spawn_point.rotation.yaw < -135:
+            ob = world.spawn_actor(
+                ob_bp,
+                carla.Transform(
+                    carla.Location(x=spawn_point.location.x - anomaly_distance, y=spawn_point.location.y + random.random() * 2 - 1 + calib,
+                                   z=parameters['z']),
+                    carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
+                ))
+        elif spawn_point.rotation.yaw < -45 and spawn_point.rotation.yaw > -135:
+            ob = world.spawn_actor(
+                ob_bp,
+                carla.Transform(
+                    carla.Location(x=spawn_point.location.x + random.random() * 2 - 1 + calib, y=spawn_point.location.y - anomaly_distance,
+                                   z=parameters['z']),
+                    carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
+                ))
+        ob_list.append(ob)
 
         if args.no_rendering:
             settings.no_rendering_mode = True
@@ -782,7 +782,7 @@ def main():
     argparser.add_argument('--sync', action='store_true', help='Synchronous mode execution')
     argparser.add_argument('--async', dest='sync', action='store_false', help='Asynchronous mode execution')
     argparser.set_defaults(sync=True)
-    argparser.add_argument('--res', metavar='WIDTHxHEIGHT', default='1280x720', help='window resolution (default: 1280x720)')
+    argparser.add_argument('--res', metavar='WIDTHxHEIGHT', default='640x360', help='window resolution (default: 1280x720)')
     argparser.add_argument(
         '--weather',
         metavar='WEATHER',

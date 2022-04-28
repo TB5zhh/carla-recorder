@@ -1,3 +1,7 @@
 *.png
 *.txt
 **/__pycache__/
+*.xyz
+*.tar.gz
+*.zip
+*.mat
