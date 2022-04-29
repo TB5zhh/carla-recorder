@@ -14,6 +14,7 @@ To do that, check lines 290-308.
 """
 
 import glob
+import json
 from pydoc import cli
 from re import S
 from signal import signal
@@ -335,19 +336,31 @@ def run_simulation(args, client):
         # Getting the world and
         print(client.get_available_maps())
 
-        # weather manager
-        def static_weather(id):
-            if id == 1:
-                return carla.WeatherParameters(cloudiness=0.0, precipitation=0.0, fog_density=0.0, sun_altitude_angle=70.0)
-            elif id == 2:
-                return carla.WeatherParameters(cloudiness=0.0, precipitation=0.0, fog_density=40.0, sun_altitude_angle=70.0)
-            elif id == 3:
-                return carla.WeatherParameters(cloudiness=50.0, precipitation=80.0, fog_density=30.0, sun_altitude_angle=60.0)
-            else:
-                return carla.WeatherParameters(cloudiness=0.0, precipitation=0.0, fog_density=0.0, sun_altitude_angle=0.0)
+        # Why the ** you Carla failed to load your own maps???
+        # embed()
+        # Directly copied from its documentation, still doesn't work :(
+        # world = client.load_world('Town03_Opt', carla.MapLayer.Buildings | carla.MapLayer.ParkedVehicles)
 
-        print("weather id:", args.weather)
-        weather = static_weather(args.weather)
+        # weather manager
+        # def static_weather(id):
+        #     if id == 1:
+        #         return carla.WeatherParameters(cloudiness=0.0, precipitation=0.0, fog_density=0.0, sun_altitude_angle=70.0)
+        #     elif id == 2:
+        #         return carla.WeatherParameters(cloudiness=0.0, precipitation=0.0, fog_density=40.0, sun_altitude_angle=70.0)
+        #     elif id == 3:
+        #         return carla.WeatherParameters(cloudiness=50.0, precipitation=80.0, fog_density=30.0, sun_altitude_angle=60.0)
+        #     else:
+        #         return carla.WeatherParameters(cloudiness=0.0, precipitation=0.0, fog_density=0.0, sun_altitude_angle=0.0)
+
+
+        # print("weather id:", args.weather)
+        # weather = static_weather(args.weather)
+        args.cloudiness = float(args.cloudiness)
+        args.precipitation = float(args.precipitation)
+        args.fog_density = float(args.fog_density)
+        args.sun_altitude_angle = float(args.sun_altitude_angle)
+
+        weather = carla.WeatherParameters(cloudiness=args.cloudiness, precipitation=args.precipitation, fog_density=args.fog_density, sun_altitude_angle=args.sun_altitude_angle)
         world.set_weather(weather)
 
         traffic_manager = client.get_trafficmanager(args.tm_port)
@@ -367,21 +380,26 @@ def run_simulation(args, client):
             settings.synchronous_mode = True
             settings.fixed_delta_seconds = 0.05
             world.apply_settings(settings)
-
+        
+        # embed()
+        
         # Instanciating the vehicle to which we attached the sensors
         bp = world.get_blueprint_library().filter('charger_2020')[0]
-        while True:
-            spawn_point_id = random.randint(0, len(world.get_map().get_spawn_points()) - 1)
-            spawn_point = world.get_map().get_spawn_points()[spawn_point_id]
-            if angle_filter(spawn_point.rotation.yaw):
-                break
-        spawn_point_id = 141
+        # while True:
+        #     spawn_point_id = random.randint(0, len(world.get_map().get_spawn_points()) - 1)
+        #     spawn_point = world.get_map().get_spawn_points()[spawn_point_id]
+        #     if angle_filter(spawn_point.rotation.yaw):
+        #         break
+        # spawn_point_id = 141
+        # spawn_point = world.get_map().get_spawn_points()[spawn_point_id]
+        # # id: 141 spawn_point: Transform(Location(x=65.235275, y=13.414804, z=0.600000), Rotation(pitch=0.000000, yaw=-179.840790, roll=0.000000))
+        # spawn_point = carla.Transform(
+        #         carla.Location(x=70.235275, y=13.414804, z=0.600000),
+        #         carla.Rotation(pitch=0.000000, yaw=-179.840790, roll=0.000000),
+        #     )
+        spawn_point_id = int(args.spawn_point)
         spawn_point = world.get_map().get_spawn_points()[spawn_point_id]
-        # id: 141 spawn_point: Transform(Location(x=65.235275, y=13.414804, z=0.600000), Rotation(pitch=0.000000, yaw=-179.840790, roll=0.000000))
-        spawn_point = carla.Transform(
-                carla.Location(x=70.235275, y=13.414804, z=0.600000),
-                carla.Rotation(pitch=0.000000, yaw=-179.840790, roll=0.000000),
-            )
+
         print("id:", spawn_point_id, "spawn_point:", spawn_point)
         vehicle = world.spawn_actor(bp, spawn_point)
         vehicles_list.append(vehicle)
@@ -430,6 +448,11 @@ def run_simulation(args, client):
         # Then, SensorManager can be used to spawn RGBCamera, LiDARs and SemanticLiDARs as needed
         # and assign each of them to a grid position,
         fid = path_generator(args.file_dir)
+
+        # Write Parameters here!
+        with open(Path(args.file_dir) / Path(fid) / 'config.json', 'w+') as f:
+            f.write(json.dumps(args.__dict__, indent=4))
+
         SensorManager(world,
                       display_manager,
                       'vRGBCamera',
@@ -732,8 +755,8 @@ def run_simulation(args, client):
 
             if call_exit:
                 break
-    except client.TimeoutException:
-        pass # ???
+    except BaseException as e:
+        print(e)
 
     finally:
         if display_manager:
@@ -829,8 +852,16 @@ def main(args):
     argparser.add_argument('--no-rendering', action='store_true', default=False, help='Activate no rendering mode')
     argparser.add_argument('--file-dir', default='test', help='IP of the host server (default: 127.0.0.1)')
 
-    args = argparser.parse_args(args)
+    # Hyper parameters for each dataset!
+    argparser.add_argument('--cloudiness', '-w1', default='0.0', help='One of the weather properties')
+    argparser.add_argument('--precipitation', '-w2', default='0.0', help='One of the weather properties')
+    argparser.add_argument('--fog-density', '-w3', default='0.0', help='One of the weather properties')
+    argparser.add_argument('--sun-altitude-angle', '-w4', default='70.0', help='One of the weather properties')
+    argparser.add_argument('--spawn-point', default='141', help='One of the weather properties')
 
+
+    args = argparser.parse_args(args)
+    print(args)
 
 
     args.width, args.height = [int(x) for x in args.res.split('x')]
@@ -853,4 +884,4 @@ def main(args):
         print('\nCancelled by user. Bye!')
 
 if __name__ == '__main__':
-    main()
+    main(sys.argv)
