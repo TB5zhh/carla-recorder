@@ -1,7 +1,11 @@
 *.png
-*.txt
+# *.txt
 **/__pycache__/
 *.xyz
 *.tar.gz
 *.zip
 *.mat
+
+test/
+generated/
+old_generate/
