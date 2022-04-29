@@ -14,12 +14,16 @@ To do that, check lines 290-308.
 """
 
 import glob
+from pydoc import cli
 from re import S
+from signal import signal
 import cv2
 import sys
 from IPython import embed
 from tqdm import tqdm
 import os
+import subprocess
+from pathlib import Path
 
 chk = True
 FN = "6view_with_anomaly"
@@ -316,8 +320,11 @@ def run_simulation(args, client):
     walkers_list = []
     all_id = []
     ob_list = []
-    client = carla.Client(args.host, args.port)
-    client.set_timeout(10.0)
+
+    # Commented by c7w, because this shadows the "client" object passed in
+    # client = carla.Client(args.host, args.port)
+    # client.set_timeout(10.0)
+    
     synchronous_master = False
     random.seed(args.seed if args.seed is not None else int(time.time()))
 
@@ -725,6 +732,8 @@ def run_simulation(args, client):
 
             if call_exit:
                 break
+    except client.TimeoutException:
+        pass # ???
 
     finally:
         if display_manager:
@@ -747,6 +756,7 @@ def run_simulation(args, client):
         client.apply_batch([carla.command.DestroyActor(x) for x in ob_list])
 
         world.apply_settings(original_settings)
+        
 
 
 def get_actor_blueprints(world, filter, generation):
@@ -775,7 +785,9 @@ def get_actor_blueprints(world, filter, generation):
         return []
 
 
-def main():
+def main(args):
+    args = args[1:]
+    print(args)
     argparser = argparse.ArgumentParser(description='CARLA Sensor tutorial')
     argparser.add_argument('--host', metavar='H', default='localhost', help='IP of the host server (default: 127.0.0.1)')
     argparser.add_argument('-p', '--port', metavar='P', default=2000, type=int, help='TCP port to listen to (default: 2000)')
@@ -817,14 +829,21 @@ def main():
     argparser.add_argument('--no-rendering', action='store_true', default=False, help='Activate no rendering mode')
     argparser.add_argument('--file-dir', default='test', help='IP of the host server (default: 127.0.0.1)')
 
-    args = argparser.parse_args()
+    args = argparser.parse_args(args)
+
+
 
     args.width, args.height = [int(x) for x in args.res.split('x')]
 
     logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.INFO)
 
     try:
-        # while True:
+
+        # Try start Carla server... 
+        server_process = subprocess.Popen(Path.cwd() / "../carla/Unreal/CarlaUE4/ExportPackages/LinuxNoEditor/CarlaUE4.sh", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # Wait for server process to get ready :(
+        time.sleep(10) 
+
         client = carla.Client(args.host, args.port)
         client.set_timeout(10.0)
 
@@ -832,7 +851,6 @@ def main():
 
     except KeyboardInterrupt:
         print('\nCancelled by user. Bye!')
-
 
 if __name__ == '__main__':
     main()
