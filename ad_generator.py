@@ -26,6 +26,8 @@ import os
 import subprocess
 from pathlib import Path
 
+from utils.save_data import save_function_factory
+
 chk = True
 FN = "6view_with_anomaly"
 
@@ -167,6 +169,28 @@ class SensorManager:
                 camera.listen(self.save_rgb_image_x)
             else:
                 camera.listen(self.save_rgb_image_v)
+
+                # === G-Buffers ===
+                os.makedirs(self.fn + f"/{self.fid}/gbuffer_v", exist_ok=True)
+
+                g_buffer_list = [
+                    'SaveSceneColorTexture',
+                    'SaveSceneDepthTexture',
+                    'SaveSceneStencilTexture',
+                    'SaveGBufferATexture',
+                    'SaveGBufferBTexture',
+                    'SaveGBufferCTexture',
+                    'SaveGBufferDTexture',
+                    'SaveGBufferETexture',
+                    'SaveGBufferFTexture',
+                    'SaveVelocityTexture',
+                    'SaveSSAOTexture',
+                    'SaveCustomDepthTexture',
+                    'SaveCustomStencilTexture'
+                ]
+
+                for i, g_buffer_name in enumerate(g_buffer_list):
+                    camera.listen_to_gbuffer(i, save_function_factory(self.fn + f"/{self.fid}/gbuffer_v")[g_buffer_name])
 
             return camera
 

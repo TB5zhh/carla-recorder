@@ -21,7 +21,7 @@ def run_forever():
         process = Process(target=main, args=(sys.argv, ))
         process.start()
         process.join()
-        kill_server() # Kill server!
+        kill_server()  # Kill server!
 
 
 def my_iter():
@@ -54,7 +54,7 @@ def my_iter():
         process = Process(target=main, args=(args, Targs))
         process.start()
         process.join()
-        kill_server() # Kill server!
+        kill_server()  # Kill server!
 
     
 if __name__ == "__main__":
