@@ -14,12 +14,19 @@ To do that, check lines 290-308.
 """
 
 import glob
+import json
+from pydoc import cli
 from re import S
+from signal import signal
 import cv2
 import sys
 from IPython import embed
 from tqdm import tqdm
 import os
+import subprocess
+from pathlib import Path
+
+from utils.save_data import save_function_factory
 
 chk = True
 FN = "6view_with_anomaly"
@@ -162,6 +169,28 @@ class SensorManager:
                 camera.listen(self.save_rgb_image_x)
             else:
                 camera.listen(self.save_rgb_image_v)
+
+                # === G-Buffers ===
+                os.makedirs(self.fn + f"/{self.fid}/gbuffer_v", exist_ok=True)
+
+                g_buffer_list = [
+                    'SaveSceneColorTexture',
+                    'SaveSceneDepthTexture',
+                    'SaveSceneStencilTexture',
+                    'SaveGBufferATexture',
+                    'SaveGBufferBTexture',
+                    'SaveGBufferCTexture',
+                    'SaveGBufferDTexture',
+                    'SaveGBufferETexture',
+                    'SaveGBufferFTexture',
+                    'SaveVelocityTexture',
+                    'SaveSSAOTexture',
+                    'SaveCustomDepthTexture',
+                    'SaveCustomStencilTexture'
+                ]
+
+                for i, g_buffer_name in enumerate(g_buffer_list):
+                    camera.listen_to_gbuffer(i, save_function_factory(self.fn + f"/{self.fid}/gbuffer_v")[g_buffer_name])
 
             return camera
 
@@ -316,8 +345,11 @@ def run_simulation(args, client):
     walkers_list = []
     all_id = []
     ob_list = []
-    client = carla.Client(args.host, args.port)
-    client.set_timeout(10.0)
+
+    # Commented by c7w, because this shadows the "client" object passed in
+    # client = carla.Client(args.host, args.port)
+    # client.set_timeout(10.0)
+    
     synchronous_master = False
     random.seed(args.seed if args.seed is not None else int(time.time()))
 
@@ -328,19 +360,31 @@ def run_simulation(args, client):
         # Getting the world and
         print(client.get_available_maps())
 
-        # weather manager
-        def static_weather(id):
-            if id == 1:
-                return carla.WeatherParameters(cloudiness=0.0, precipitation=0.0, fog_density=0.0, sun_altitude_angle=70.0)
-            elif id == 2:
-                return carla.WeatherParameters(cloudiness=0.0, precipitation=0.0, fog_density=40.0, sun_altitude_angle=70.0)
-            elif id == 3:
-                return carla.WeatherParameters(cloudiness=50.0, precipitation=80.0, fog_density=30.0, sun_altitude_angle=60.0)
-            else:
-                return carla.WeatherParameters(cloudiness=0.0, precipitation=0.0, fog_density=0.0, sun_altitude_angle=0.0)
+        # Why the ** you Carla failed to load your own maps???
+        # embed()
+        # Directly copied from its documentation, still doesn't work :(
+        # world = client.load_world('Town03_Opt', carla.MapLayer.Buildings | carla.MapLayer.ParkedVehicles)
 
-        print("weather id:", args.weather)
-        weather = static_weather(args.weather)
+        # weather manager
+        # def static_weather(id):
+        #     if id == 1:
+        #         return carla.WeatherParameters(cloudiness=0.0, precipitation=0.0, fog_density=0.0, sun_altitude_angle=70.0)
+        #     elif id == 2:
+        #         return carla.WeatherParameters(cloudiness=0.0, precipitation=0.0, fog_density=40.0, sun_altitude_angle=70.0)
+        #     elif id == 3:
+        #         return carla.WeatherParameters(cloudiness=50.0, precipitation=80.0, fog_density=30.0, sun_altitude_angle=60.0)
+        #     else:
+        #         return carla.WeatherParameters(cloudiness=0.0, precipitation=0.0, fog_density=0.0, sun_altitude_angle=0.0)
+
+
+        # print("weather id:", args.weather)
+        # weather = static_weather(args.weather)
+        args.cloudiness = float(args.cloudiness)
+        args.precipitation = float(args.precipitation)
+        args.fog_density = float(args.fog_density)
+        args.sun_altitude_angle = float(args.sun_altitude_angle)
+
+        weather = carla.WeatherParameters(cloudiness=args.cloudiness, precipitation=args.precipitation, fog_density=args.fog_density, sun_altitude_angle=args.sun_altitude_angle)
         world.set_weather(weather)
 
         traffic_manager = client.get_trafficmanager(args.tm_port)
@@ -360,9 +404,12 @@ def run_simulation(args, client):
             settings.synchronous_mode = True
             settings.fixed_delta_seconds = 0.05
             world.apply_settings(settings)
-
+        
+        # embed()
+        
         # Instanciating the vehicle to which we attached the sensors
         bp = world.get_blueprint_library().filter('charger_2020')[0]
+<<<<<<< HEAD
         while True:
             spawn_point_id = random.randint(0, len(world.get_map().get_spawn_points()) - 1)
             spawn_point = world.get_map().get_spawn_points()[spawn_point_id]
@@ -375,6 +422,24 @@ def run_simulation(args, client):
         #         carla.Location(x=70.235275, y=13.414804, z=0.600000),
         #         carla.Rotation(pitch=0.000000, yaw=-179.840790, roll=0.000000),
         #     )
+=======
+        # while True:
+        #     spawn_point_id = random.randint(0, len(world.get_map().get_spawn_points()) - 1)
+        #     spawn_point = world.get_map().get_spawn_points()[spawn_point_id]
+        #     if angle_filter(spawn_point.rotation.yaw):
+        #         break
+        # spawn_point_id = 141
+        # spawn_point = world.get_map().get_spawn_points()[spawn_point_id]
+        # # id: 141 spawn_point: Transform(Location(x=65.235275, y=13.414804, z=0.600000), Rotation(pitch=0.000000, yaw=-179.840790, roll=0.000000))
+        # spawn_point = carla.Transform(
+        #         carla.Location(x=70.235275, y=13.414804, z=0.600000),
+        #         carla.Rotation(pitch=0.000000, yaw=-179.840790, roll=0.000000),
+        #     )
+        print(world.get_map().get_spawn_points().__len__())
+        spawn_point_id = int(args.spawn_point)
+        spawn_point = world.get_map().get_spawn_points()[spawn_point_id]
+
+>>>>>>> dd679d367dfaae05a542671f3718d3ed68e45888
         print("id:", spawn_point_id, "spawn_point:", spawn_point)
         vehicle = world.spawn_actor(bp, spawn_point)
         vehicles_list.append(vehicle)
@@ -423,6 +488,11 @@ def run_simulation(args, client):
         # Then, SensorManager can be used to spawn RGBCamera, LiDARs and SemanticLiDARs as needed
         # and assign each of them to a grid position,
         fid = path_generator(args.file_dir)
+
+        # Write Parameters here!
+        with open(Path(args.file_dir) / Path(fid) / 'config.json', 'w+') as f:
+            f.write(json.dumps(args.__dict__, indent=4))
+
         SensorManager(world,
                       display_manager,
                       'vRGBCamera',
@@ -725,6 +795,8 @@ def run_simulation(args, client):
 
             if call_exit:
                 break
+    except BaseException as e:
+        print(e)
 
     finally:
         if display_manager:
@@ -747,6 +819,7 @@ def run_simulation(args, client):
         client.apply_batch([carla.command.DestroyActor(x) for x in ob_list])
 
         world.apply_settings(original_settings)
+        
 
 
 def get_actor_blueprints(world, filter, generation):
@@ -775,14 +848,16 @@ def get_actor_blueprints(world, filter, generation):
         return []
 
 
-def main():
+def main(args, Targs=None):
+    args = args[1:]
+    print(args)
     argparser = argparse.ArgumentParser(description='CARLA Sensor tutorial')
     argparser.add_argument('--host', metavar='H', default='localhost', help='IP of the host server (default: 127.0.0.1)')
     argparser.add_argument('-p', '--port', metavar='P', default=2000, type=int, help='TCP port to listen to (default: 2000)')
     argparser.add_argument('--sync', action='store_true', help='Synchronous mode execution')
     argparser.add_argument('--async', dest='sync', action='store_false', help='Asynchronous mode execution')
     argparser.set_defaults(sync=True)
-    argparser.add_argument('--res', metavar='WIDTHxHEIGHT', default='1280x720', help='window resolution (default: 1280x720)')
+    argparser.add_argument('--res', metavar='WIDTHxHEIGHT', default='640x360', help='window resolution (default: 1280x720)')
     argparser.add_argument(
         '--weather',
         metavar='WEATHER',
@@ -817,14 +892,35 @@ def main():
     argparser.add_argument('--no-rendering', action='store_true', default=False, help='Activate no rendering mode')
     argparser.add_argument('--file-dir', default='test', help='IP of the host server (default: 127.0.0.1)')
 
-    args = argparser.parse_args()
+    # Hyper parameters for each dataset!
+    argparser.add_argument('--cloudiness', '-w1', default='0.0', help='One of the weather properties')
+    argparser.add_argument('--precipitation', '-w2', default='0.0', help='One of the weather properties')
+    argparser.add_argument('--fog-density', '-w3', default='0.0', help='One of the weather properties')
+    argparser.add_argument('--sun-altitude-angle', '-w4', default='70.0', help='One of the weather properties')
+    argparser.add_argument('--spawn-point', default='141', help='One of the weather properties')
+    argparser.add_argument('--map', default='/Game/Carla/Maps/Town10HD_Opt', help='One of the weather properties')
+
+
+    args = argparser.parse_args(args)
+    if Targs:
+        for key, val in Targs.__dict__.items():
+            args.__dict__[key] = val
+    print(args)
+
+   
+
 
     args.width, args.height = [int(x) for x in args.res.split('x')]
 
     logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.INFO)
 
     try:
-        # while True:
+
+        # Try start Carla server... 
+        server_process = subprocess.Popen(Path.cwd() / "../carla/Unreal/CarlaUE4/ExportPackages/LinuxNoEditor/CarlaUE4.sh", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # Wait for server process to get ready :(
+        time.sleep(10) 
+
         client = carla.Client(args.host, args.port)
         client.set_timeout(10.0)
 
@@ -833,6 +929,5 @@ def main():
     except KeyboardInterrupt:
         print('\nCancelled by user. Bye!')
 
-
 if __name__ == '__main__':
-    main()
+    main(sys.argv)
