@@ -5,6 +5,7 @@
 *.tar.gz
 *.zip
 *.mat
+.idea/
 
 test/
 generated/
