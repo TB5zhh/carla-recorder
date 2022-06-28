@@ -596,7 +596,7 @@ def run_simulation(args, client):
                       file_dir=args.file_dir,
                       fid=fid)
 
-        for gbuffer_name in []:
+        for gbuffer_name in ["SceneColor", "SceneDepth", "GBufferA", "GBufferB", "GBufferC", "GBufferD"]:
             SensorManager(world,
                           None,
                           'vGBufferCamera',
