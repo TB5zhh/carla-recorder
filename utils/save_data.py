@@ -72,18 +72,17 @@ def save_function_factory(save_dir):
         image.save_to_disk(f'{save_dir}/CustomStencil-%06d.png' % image.frame)
 
     return {
-        "SaveSceneColorTexture": SaveSceneColorTexture,
-        "SaveSceneDepthTexture": SaveSceneDepthTexture,
-        "SaveSceneStencilTexture": SaveSceneStencilTexture,
-        "SaveGBufferATexture": SaveGBufferATexture,
-        "SaveGBufferBTexture": SaveGBufferBTexture,
-        "SaveGBufferCTexture": SaveGBufferCTexture,
-        "SaveGBufferDTexture": SaveGBufferDTexture,
-        "SaveGBufferETexture": SaveGBufferETexture,
-        "SaveGBufferFTexture": SaveGBufferFTexture,
-        "SaveVelocityTexture": SaveVelocityTexture,
-        "SaveSSAOTexture": SaveSSAOTexture,
-        "SaveCustomDepthTexture": SaveCustomDepthTexture,
-        "SaveCustomStencilTexture": SaveCustomStencilTexture,
-
-    }
+            "SaveSceneColorTexture": SaveSceneColorTexture,
+            "SaveSceneDepthTexture": SaveSceneDepthTexture,
+            "SaveSceneStencilTexture": SaveSceneStencilTexture,
+            "SaveGBufferATexture": SaveGBufferATexture,
+            "SaveGBufferBTexture": SaveGBufferBTexture,
+            "SaveGBufferCTexture": SaveGBufferCTexture,
+            "SaveGBufferDTexture": SaveGBufferDTexture,
+            "SaveGBufferETexture": SaveGBufferETexture,
+            "SaveGBufferFTexture": SaveGBufferFTexture,
+            "SaveVelocityTexture": SaveVelocityTexture,
+            "SaveSSAOTexture": SaveSSAOTexture,
+            "SaveCustomDepthTexture": SaveCustomDepthTexture,
+            "SaveCustomStencilTexture": SaveCustomStencilTexture,
+        }

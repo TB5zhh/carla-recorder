@@ -134,14 +134,14 @@ class DisplayManager:
 
 class SensorManager:
 
-    def __init__(self, world, display_man, sensor_type, transform, attached, sensor_options, display_pos, file_dir, fid):
+    def __init__(self, world, display_man, sensor_type, transform, attached, sensor_options, display_pos, file_dir, fid, **kwargs):
         self.surface = None
         self.world = world
         self.display_man = display_man
         self.display_pos = display_pos
         self.fn = file_dir
         self.fid = fid
-        self.sensor = self.init_sensor(sensor_type, transform, attached, sensor_options)
+        self.sensor = self.init_sensor(sensor_type, transform, attached, sensor_options, kwargs=kwargs)
         self.sensor_options = sensor_options
         self.timer = CustomTimer()
 
@@ -150,7 +150,7 @@ class SensorManager:
 
         self.display_man.add_sensor(self)
 
-    def init_sensor(self, sensor_type, transform, attached, sensor_options):
+    def init_sensor(self, sensor_type, transform, attached, sensor_options, **kwargs):
         if (sensor_type == 'xRGBCamera') or (sensor_type == 'vRGBCamera'):
             camera_bp = self.world.get_blueprint_library().find('sensor.camera.rgb')
             disp_size = self.display_man.get_display_size()
@@ -168,38 +168,6 @@ class SensorManager:
                 camera.listen(self.save_rgb_image_x)
             else:
                 camera.listen(self.save_rgb_image_v)
-
-                # === G-Buffers ===
-                os.makedirs(self.fn + f"/{self.fid}/gbuffer_v", exist_ok=True)
-
-                g_buffer_list = [
-                    'SaveSceneColorTexture',
-                    'SaveSceneDepthTexture',
-                    'SaveSceneStencilTexture',
-                    'SaveGBufferATexture',
-                    'SaveGBufferBTexture',
-                    'SaveGBufferCTexture',
-                    'SaveGBufferDTexture',
-                    'SaveGBufferETexture',
-                    'SaveGBufferFTexture',
-                    'SaveVelocityTexture',
-                    'SaveSSAOTexture',
-                    'SaveCustomDepthTexture',
-                    'SaveCustomStencilTexture'
-                ]
-
-                for i, g_buffer_name in enumerate(g_buffer_list):
-                    
-                    # Magically it could work after ignoring these cases.
-                    # I haven't found out which index caused the simulator to crash yet.
-                    # Anyway it could work now.
-                    ignore_case = [2,7,8,9,10,11,12]  
-                    # ignore_case = g_buffer_list
-                    if i in ignore_case:
-                        continue
-
-                    print(f"Enabled: {i} {g_buffer_name}")
-                    camera.listen_to_gbuffer(i, save_function_factory(self.fn + f"/{self.fid}/gbuffer_v")[g_buffer_name])
 
             return camera
 
@@ -236,6 +204,18 @@ class SensorManager:
                 camera.listen(self.save_depth_image_v)
 
             return camera
+
+        elif sensor_type == "xGBufferCamera" or sensor_type == "vGBufferCamera":
+            camera_bp = self.world.get_blueprint_library().find('sensor.camera.rgb')
+            camera_bp.set_attribute('image_size_x', 1280 if 'width' not in kwargs else kwargs['width'])
+            camera_bp.set_attribute('image_size_y', 720 if 'height' not in kwargs is None else kwargs['height'])
+
+            for key in sensor_options:
+                camera_bp.set_attribute(key, sensor_options[key])
+
+            camera = self.world.spawn_actor(camera_bp, transform, attach_to=attached)
+
+            camera.listen_to_gbuffer(self.get_gbuffer_id(kwargs["GBuffer"]), self.get_gbuffer_function(kwargs["GBuffer"]))
 
         else:
             return None
@@ -332,6 +312,110 @@ class SensorManager:
         if chk:
             cv2.imwrite(self.fn + "/{}/depth_v/{}.png".format(self.fid, str(self.tics_processing)), array)
 
+    # === G Buffers ===
+    def get_gbuffer_id(self, gbuffer_name):
+        return {
+            "SceneColor": 0,
+            "SceneDepth": 1,
+            "SceneStencil": 2,
+            "GBufferA": 3,
+            "GBufferB": 4,
+            "GBufferC": 5,
+            "GBufferD": 6,
+            "GBufferE": 7,
+            "GBufferF": 8,
+            "Velocity": 9,
+            "SSAO": 10,
+            "CustomDepth": 11,
+            "CustomStencil": 12
+        }[gbuffer_name]
+
+    def get_gbuffer_function(self, gbuffer_name):
+        gbuffer_name = "Save" + gbuffer_name + "Texture"
+        return {
+            "SaveSceneColorTexture": self.SaveSceneColorTexture,
+            "SaveSceneDepthTexture": self.SaveSceneDepthTexture,
+            "SaveSceneStencilTexture": self.SaveSceneStencilTexture,
+            "SaveGBufferATexture": self.SaveGBufferATexture,
+            "SaveGBufferBTexture": self.SaveGBufferBTexture,
+            "SaveGBufferCTexture": self.SaveGBufferCTexture,
+            "SaveGBufferDTexture": self.SaveGBufferDTexture,
+            "SaveGBufferETexture": self.SaveGBufferETexture,
+            "SaveGBufferFTexture": self.SaveGBufferFTexture,
+            "SaveVelocityTexture": self.SaveVelocityTexture,
+            "SaveSSAOTexture": self.SaveSSAOTexture,
+            "SaveCustomDepthTexture": self.SaveCustomDepthTexture,
+            "SaveCustomStencilTexture": self.SaveCustomStencilTexture,
+        }[gbuffer_name]
+
+    def SaveGBuffer(self, image):
+        t_start = self.timer.time()
+
+        # image.convert(carla.ColorConverter.LogarithmicDepth)
+        array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+        array = np.reshape(array, (image.height, image.width, 4))
+        array = array[:, :, :3]
+
+        t_end = self.timer.time()
+
+        self.time_processing += (t_end - t_start)
+        self.tics_processing += 1
+        return array
+
+    # TODO: change to functools::partial
+    def SaveSceneColorTexture(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneColor.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveSceneDepthTexture(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneDepth.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveSceneStencilTexture(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneStencil.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveGBufferATexture(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneGBufferA.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveGBufferBTexture(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneGBufferB.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveGBufferCTexture(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneGBufferC.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveGBufferDTexture(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneGBufferD.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveGBufferETexture(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneGBufferE.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveGBufferFTexture(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneGBufferF.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveVelocityTexture(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneVelocity.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveSSAOTexture(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneSSAO.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveCustomDepthTexture(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneCustomDepth.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveCustomStencilTexture(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneCustomStencil.png".format(self.fid, str(self.tics_processing)), array)
+
+    # === Operations ===
     def render(self):
         if self.surface is not None:
             offset = self.display_man.get_display_offset(self.display_pos)
@@ -358,7 +442,7 @@ def run_simulation(args, client):
     # Commented by c7w, because this shadows the "client" object passed in
     # client = carla.Client(args.host, args.port)
     # client.set_timeout(10.0)
-    
+
     synchronous_master = False
     random.seed(args.seed if args.seed is not None else int(time.time()))
 
@@ -413,9 +497,9 @@ def run_simulation(args, client):
             settings.synchronous_mode = True
             settings.fixed_delta_seconds = 0.05
             world.apply_settings(settings)
-        
+
         # embed()
-        
+
         # Instanciating the vehicle to which we attached the sensors
         bp = world.get_blueprint_library().filter('charger_2020')[0]
         # while True:
@@ -511,7 +595,17 @@ def run_simulation(args, client):
                       display_pos=[2, 0],
                       file_dir=args.file_dir,
                       fid=fid)
-                      
+
+        for gbuffer_name in []:
+            SensorManager(world,
+                          None,
+                          'vGBufferCamera',
+                          carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)),
+                          vehicle, {},
+                          display_pos=[2,1],
+                          file_dir=args.file_dir,
+                          fid=fid)
+
         # Disable road sensors currently
         # SensorManager(world, display_manager, 'xRGBCamera', infra_sensor_pos, None, {}, display_pos=[0, 1], file_dir=args.file_dir, fid=fid)
         # SensorManager(world, display_manager, 'xSemanticCamera', infra_sensor_pos, None, {}, display_pos=[1, 1], file_dir=args.file_dir, fid=fid)
@@ -816,7 +910,7 @@ def run_simulation(args, client):
         client.apply_batch([carla.command.DestroyActor(x) for x in ob_list])
 
         world.apply_settings(original_settings)
-        
+
 
 
 def get_actor_blueprints(world, filter, generation):
@@ -904,7 +998,7 @@ def main(args, Targs=None):
             args.__dict__[key] = val
     print(args)
 
-   
+
 
 
     args.width, args.height = [int(x) for x in args.res.split('x')]
@@ -916,7 +1010,7 @@ def main(args, Targs=None):
         # Try start Carla server... 
         server_process = subprocess.Popen(Path.cwd() / "../carla/Unreal/CarlaUE4/ExportPackages/LinuxNoEditor/CarlaUE4.sh", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         # Wait for server process to get ready :(
-        time.sleep(10) 
+        time.sleep(10)
 
         client = carla.Client(args.host, args.port)
         client.set_timeout(5.0)
