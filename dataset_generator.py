@@ -28,11 +28,16 @@ def my_iter():
 
     args = sys.argv
 
-    spawn_point = range(0, 150, 30) # 5
+    import random
+    spawn_point = [random.choice(range(155)) for _ in range(10)] # 5
     cloudiness = [0, 80] # 2
     precipitation = [0, 80] # 2
     fog_density = [0, 80] # 2
     sun_altitude_angle = [-10, 30, 60] # 3
+
+    cloudiness = precipitation = fog_density = [0, ]
+    sun_altitude_angle = [70, ]
+
     n = [100, ] # 1
     w  = [100, ] # 1
 
@@ -47,7 +52,7 @@ def my_iter():
         Targs.number_of_vehicles = config[5]
         Targs.number_of_walkers = config[6]
 
-        Targs.file_dir = f"/media/ubuntu/0997C4D95A4FEE10/CARLA-TRY/sp{config[0]}-cloud{config[1]}-pre{config[2]}-fog{config[3]}-sun{config[4]}-n{config[5]}-v{config[6]}"
+        Targs.file_dir = f"/media/ubuntu/tb5zhh/Carla/sp{config[0]}-cloud{config[1]}-pre{config[2]}-fog{config[3]}-sun{config[4]}-n{config[5]}-v{config[6]}"
 
         # 5 * 8 * 3 = 120
         # 120 * 600M = 0.12 * 600 G = 72 G

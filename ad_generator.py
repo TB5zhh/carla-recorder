@@ -16,7 +16,6 @@ To do that, check lines 290-308.
 import glob
 import json
 from pydoc import cli
-from re import S
 from signal import signal
 import cv2
 import sys
@@ -49,6 +48,7 @@ def path_generator(fn):
     os.makedirs(os.path.join(fn, fid, 'rgb_v'), exist_ok=True)
     os.makedirs(os.path.join(fn, fid, 'depth_x'), exist_ok=True)
     os.makedirs(os.path.join(fn, fid, 'depth_v'), exist_ok=True)
+    os.makedirs(os.path.join(fn, fid, 'gbuffer_v'), exist_ok=True)
     return fid
 
 
@@ -189,6 +189,16 @@ class SensorManager:
                 ]
 
                 for i, g_buffer_name in enumerate(g_buffer_list):
+                    
+                    # Magically it could work after ignoring these cases.
+                    # I haven't found out which index caused the simulator to crash yet.
+                    # Anyway it could work now.
+                    ignore_case = [2,7,8,9,10,11,12]  
+                    # ignore_case = g_buffer_list
+                    if i in ignore_case:
+                        continue
+
+                    print(f"Enabled: {i} {g_buffer_name}")
                     camera.listen_to_gbuffer(i, save_function_factory(self.fn + f"/{self.fid}/gbuffer_v")[g_buffer_name])
 
             return camera
@@ -501,9 +511,11 @@ def run_simulation(args, client):
                       display_pos=[2, 0],
                       file_dir=args.file_dir,
                       fid=fid)
-        SensorManager(world, display_manager, 'xRGBCamera', infra_sensor_pos, None, {}, display_pos=[0, 1], file_dir=args.file_dir, fid=fid)
-        SensorManager(world, display_manager, 'xSemanticCamera', infra_sensor_pos, None, {}, display_pos=[1, 1], file_dir=args.file_dir, fid=fid)
-        SensorManager(world, display_manager, 'xDepthCamera', infra_sensor_pos, None, {}, display_pos=[2, 1], file_dir=args.file_dir, fid=fid)
+                      
+        # Disable road sensors currently
+        # SensorManager(world, display_manager, 'xRGBCamera', infra_sensor_pos, None, {}, display_pos=[0, 1], file_dir=args.file_dir, fid=fid)
+        # SensorManager(world, display_manager, 'xSemanticCamera', infra_sensor_pos, None, {}, display_pos=[1, 1], file_dir=args.file_dir, fid=fid)
+        # SensorManager(world, display_manager, 'xDepthCamera', infra_sensor_pos, None, {}, display_pos=[2, 1], file_dir=args.file_dir, fid=fid)
         #######################################################################################################################################################
         # # generate obstacle
 
@@ -760,7 +772,7 @@ def run_simulation(args, client):
         #Simulation loop
         call_exit = False
         time_init_sim = timer.time()
-        for i in tqdm(range(300)):
+        for i in tqdm(range(200)):
             # Carla Tick
             if args.sync:
                 world.tick()
@@ -842,7 +854,7 @@ def main(args, Targs=None):
     argparser.add_argument('--sync', action='store_true', help='Synchronous mode execution')
     argparser.add_argument('--async', dest='sync', action='store_false', help='Asynchronous mode execution')
     argparser.set_defaults(sync=True)
-    argparser.add_argument('--res', metavar='WIDTHxHEIGHT', default='640x360', help='window resolution (default: 1280x720)')
+    argparser.add_argument('--res', metavar='WIDTHxHEIGHT', default='1280x720', help='window resolution (default: 1280x720)')
     argparser.add_argument(
         '--weather',
         metavar='WEATHER',
@@ -907,7 +919,7 @@ def main(args, Targs=None):
         time.sleep(10) 
 
         client = carla.Client(args.host, args.port)
-        client.set_timeout(10.0)
+        client.set_timeout(5.0)
 
         run_simulation(args, client)
 
