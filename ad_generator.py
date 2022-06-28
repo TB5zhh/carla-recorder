@@ -26,7 +26,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from utils.save_data import init_save_idx, save_function_factory
+from utils.save_data import save_function_factory
 
 chk = True
 FN = "6view_with_anomaly"
@@ -148,7 +148,6 @@ class SensorManager:
         self.time_processing = 0.0
         self.tics_processing = 0
 
-        init_save_idx()
         self.display_man.add_sensor(self)
 
     def init_sensor(self, sensor_type, transform, attached, sensor_options):
@@ -761,7 +760,7 @@ def run_simulation(args, client):
         #Simulation loop
         call_exit = False
         time_init_sim = timer.time()
-        for i in tqdm(range(400)):
+        for i in tqdm(range(300)):
             # Carla Tick
             if args.sync:
                 world.tick()
@@ -883,7 +882,7 @@ def main(args, Targs=None):
     argparser.add_argument('--precipitation', '-w2', default='0.0', help='One of the weather properties')
     argparser.add_argument('--fog-density', '-w3', default='0.0', help='One of the weather properties')
     argparser.add_argument('--sun-altitude-angle', '-w4', default='70.0', help='One of the weather properties')
-    argparser.add_argument('--spawn-point', default='141', help='One of the weather properties')
+    argparser.add_argument('--spawn-point', default='10', help='Ego vehicle spawn point properties')
     argparser.add_argument('--map', default='/Game/Carla/Maps/Town10HD_Opt', help='One of the weather properties')
 
 
