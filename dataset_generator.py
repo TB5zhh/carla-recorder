@@ -29,7 +29,7 @@ def my_iter():
     args = sys.argv
 
     import random
-    spawn_point = [random.choice(range(155)) for _ in range(10)] # 5
+    spawn_point = random.sample(range(155), 10) # 5
     cloudiness = [0, 80] # 2
     precipitation = [0, 80] # 2
     fog_density = [0, 80] # 2

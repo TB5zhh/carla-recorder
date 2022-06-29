@@ -891,7 +891,7 @@ def run_simulation(args, client):
             # Carla Tick
             if args.sync:
                 world.tick()
-                time.sleep(1.5)  # You may adjust this according to your PC's processing speed
+                time.sleep(0.4)  # You may adjust this according to your PC's processing speed
             else:
                 world.wait_for_tick()
 
