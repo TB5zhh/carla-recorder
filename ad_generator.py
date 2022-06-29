@@ -148,7 +148,8 @@ class SensorManager:
         self.time_processing = 0.0
         self.tics_processing = 0
 
-        self.display_man.add_sensor(self)
+        if self.display_man is not None:
+            self.display_man.add_sensor(self)
 
     def init_sensor(self, sensor_type, transform, attached, sensor_options, **kwargs):
         if (sensor_type == 'xRGBCamera') or (sensor_type == 'vRGBCamera'):
@@ -207,15 +208,22 @@ class SensorManager:
 
         elif sensor_type == "xGBufferCamera" or sensor_type == "vGBufferCamera":
             camera_bp = self.world.get_blueprint_library().find('sensor.camera.rgb')
-            camera_bp.set_attribute('image_size_x', 1280 if 'width' not in kwargs else kwargs['width'])
-            camera_bp.set_attribute('image_size_y', 720 if 'height' not in kwargs is None else kwargs['height'])
+            print("Before setting attributes...")
+            camera_bp.set_attribute('image_size_x', str(1280 if 'width' not in kwargs else kwargs['width']))
+            camera_bp.set_attribute('image_size_y', str(720 if 'height' not in kwargs else kwargs['height']))
+            print("After setting attributes...")
+            print(sensor_options)
 
             for key in sensor_options:
                 camera_bp.set_attribute(key, sensor_options[key])
 
+            print(f"Spawning GBuffer Camera {kwargs}, {camera_bp}")
             camera = self.world.spawn_actor(camera_bp, transform, attach_to=attached)
 
-            camera.listen_to_gbuffer(self.get_gbuffer_id(kwargs["GBuffer"]), self.get_gbuffer_function(kwargs["GBuffer"]))
+            gbuffer_name = kwargs['kwargs']['GBuffer']
+            print(self.get_gbuffer_id(gbuffer_name), self.get_gbuffer_function(gbuffer_name))
+            camera.listen_to_gbuffer(self.get_gbuffer_id(gbuffer_name), self.get_gbuffer_function(gbuffer_name))
+            print("After listening to g-buffer...")
 
         else:
             return None
@@ -364,7 +372,17 @@ class SensorManager:
 
     # TODO: change to functools::partial
     def SaveSceneColorTexture(self, image):
-        array = self.SaveGBuffer(image)
+        t_start = self.timer.time()
+
+        # image.convert(carla.ColorConverter.LogarithmicDepth)
+        array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+        array = np.reshape(array, (image.height, image.width, 4))
+        array = array[:, :, :3]
+
+        t_end = self.timer.time()
+
+        self.time_processing += (t_end - t_start)
+        self.tics_processing += 1
         cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneColor.png".format(self.fid, str(self.tics_processing)), array)
 
     def SaveSceneDepthTexture(self, image):
@@ -596,7 +614,9 @@ def run_simulation(args, client):
                       file_dir=args.file_dir,
                       fid=fid)
 
-        for gbuffer_name in ["SceneColor", "SceneDepth", "GBufferA", "GBufferB", "GBufferC", "GBufferD"]:
+        gbuffer_enabled_list = ["SceneColor", "SceneDepth", "GBufferA", "GBufferB", "GBufferC", "GBufferD"]
+        # gbuffer_enabled_list = ["GBufferA"]
+        for gbuffer_name in gbuffer_enabled_list:
             SensorManager(world,
                           None,
                           'vGBufferCamera',
@@ -604,7 +624,8 @@ def run_simulation(args, client):
                           vehicle, {},
                           display_pos=[2,1],
                           file_dir=args.file_dir,
-                          fid=fid)
+                          fid=fid,
+                          GBuffer=gbuffer_name)
 
         # Disable road sensors currently
         # SensorManager(world, display_manager, 'xRGBCamera', infra_sensor_pos, None, {}, display_pos=[0, 1], file_dir=args.file_dir, fid=fid)
@@ -870,6 +891,7 @@ def run_simulation(args, client):
             # Carla Tick
             if args.sync:
                 world.tick()
+                time.sleep(1.5)  # You may adjust this according to your PC's processing speed
             else:
                 world.wait_for_tick()
 

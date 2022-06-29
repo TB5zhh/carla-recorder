@@ -52,7 +52,7 @@ def my_iter():
         Targs.number_of_vehicles = config[5]
         Targs.number_of_walkers = config[6]
 
-        Targs.file_dir = f"/media/ubuntu/tb5zhh/Carla/sp{config[0]}-cloud{config[1]}-pre{config[2]}-fog{config[3]}-sun{config[4]}-n{config[5]}-v{config[6]}"
+        Targs.file_dir = f"/media/ubuntu/c7wyyds/Carla/sp{config[0]}-cloud{config[1]}-pre{config[2]}-fog{config[3]}-sun{config[4]}-n{config[5]}-v{config[6]}"
 
         # 5 * 8 * 3 = 120
         # 120 * 600M = 0.12 * 600 G = 72 G
