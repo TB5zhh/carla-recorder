@@ -1,2 +1,12 @@
 *.png
+# *.txt
 **/__pycache__/
+*.xyz
+*.tar.gz
+*.zip
+*.mat
+.idea/
+
+test/
+generated/
+old_generate/

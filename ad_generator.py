@@ -5,7 +5,6 @@
 #
 # This work is licensed under the terms of the MIT license.
 # For a copy, see <https://opensource.org/licenses/MIT>.
-
 """
 Script that render multiple sensors in the same pygame window
 
@@ -15,14 +14,22 @@ To do that, check lines 290-308.
 """
 
 import glob
+import json
+from pydoc import cli
+from signal import signal
 import cv2
 import sys
 from IPython import embed
 from tqdm import tqdm
 import os
-from random import randint
-from palette import convert_rgb_to_mask
+import subprocess
+from pathlib import Path
+
+from utils.save_data import save_function_factory
+
 chk = True
+FN = "6view_with_anomaly"
+
 
 def build_folder(foldername):
     if os.path.exists(foldername):
@@ -30,27 +37,25 @@ def build_folder(foldername):
     else:
         os.makedirs(foldername)
 
+
 def path_generator(fn):
     os.makedirs(fn, exist_ok=True)
-    ids = [int(i) for i in os.listdir(fn)]
-    if len(ids) == 0:
-        idx = 0
-    else:
-        idx = max(ids) + 1
+    fid = str(len(os.listdir(fn)) + 1)
+    os.makedirs(os.path.join(fn, fid), exist_ok=True)
+    os.makedirs(os.path.join(fn, fid, 'mask_x'), exist_ok=True)
+    os.makedirs(os.path.join(fn, fid, 'mask_v'), exist_ok=True)
+    os.makedirs(os.path.join(fn, fid, 'rgb_x'), exist_ok=True)
+    os.makedirs(os.path.join(fn, fid, 'rgb_v'), exist_ok=True)
+    os.makedirs(os.path.join(fn, fid, 'depth_x'), exist_ok=True)
+    os.makedirs(os.path.join(fn, fid, 'depth_v'), exist_ok=True)
+    os.makedirs(os.path.join(fn, fid, 'gbuffer_v'), exist_ok=True)
+    return fid
 
-    file_path = fn + "/" + str(idx)
-    rgb_path = file_path + "/rgb"
-    mask_path = file_path + "/mask"
-    os.makedirs(rgb_path, exist_ok=True)
-    os.makedirs(mask_path, exist_ok=True)
-
-    return idx
 
 try:
-    sys.path.append(glob.glob('../carla/dist/carla-*%d.%d-%s.egg' % (
-        sys.version_info.major,
-        sys.version_info.minor,
-        'win-amd64' if os.name == 'nt' else 'linux-x86_64'))[0])
+    sys.path.append(
+        glob.glob('../carla/dist/carla-*%d.%d-%s.egg' %
+                  (sys.version_info.major, sys.version_info.minor, 'win-amd64' if os.name == 'nt' else 'linux-x86_64'))[0])
 except IndexError:
     pass
 
@@ -60,7 +65,6 @@ import random
 import time
 import logging
 import numpy as np
-from PIL import Image
 
 try:
     import pygame
@@ -69,7 +73,11 @@ try:
 except ImportError:
     raise RuntimeError('cannot import pygame, make sure pygame package is installed')
 
+angle_filter = lambda angle: (angle + 45) % 90 < 50 and (angle + 45) % 90 > 40
+
+
 class CustomTimer:
+
     def __init__(self):
         try:
             self.timer = time.perf_counter
@@ -79,7 +87,9 @@ class CustomTimer:
     def time(self):
         return self.timer()
 
+
 class DisplayManager:
+
     def __init__(self, grid_size, window_size):
         pygame.init()
         pygame.font.init()
@@ -93,7 +103,7 @@ class DisplayManager:
         return [int(self.window_size[0]), int(self.window_size[1])]
 
     def get_display_size(self):
-        return [int(self.window_size[0]/self.grid_size[1]), int(self.window_size[1]/self.grid_size[0])]
+        return [int(self.window_size[0] / self.grid_size[1]), int(self.window_size[1] / self.grid_size[0])]
 
     def get_display_offset(self, gridPos):
         dis_size = self.get_display_size()
@@ -121,25 +131,28 @@ class DisplayManager:
     def render_enabled(self):
         return self.display != None
 
+
 class SensorManager:
-    def __init__(self, world, display_man, sensor_type, transform, attached, sensor_options, display_pos, save_dir='', fid=0):
+
+    def __init__(self, world, display_man, sensor_type, transform, attached, sensor_options, display_pos, file_dir, fid, **kwargs):
         self.surface = None
         self.world = world
         self.display_man = display_man
         self.display_pos = display_pos
-        self.sensor = self.init_sensor(sensor_type, transform, attached, sensor_options)
+        self.fn = file_dir
+        self.fid = fid
+        self.sensor = self.init_sensor(sensor_type, transform, attached, sensor_options, kwargs=kwargs)
         self.sensor_options = sensor_options
         self.timer = CustomTimer()
 
         self.time_processing = 0.0
         self.tics_processing = 0
-        self.fid = fid
-        self.save_dir = save_dir
 
-        self.display_man.add_sensor(self)
+        if self.display_man is not None:
+            self.display_man.add_sensor(self)
 
-    def init_sensor(self, sensor_type, transform, attached, sensor_options):
-        if sensor_type == 'RGBCamera':
+    def init_sensor(self, sensor_type, transform, attached, sensor_options, **kwargs):
+        if (sensor_type == 'xRGBCamera') or (sensor_type == 'vRGBCamera'):
             camera_bp = self.world.get_blueprint_library().find('sensor.camera.rgb')
             disp_size = self.display_man.get_display_size()
             camera_bp.set_attribute('image_size_x', str(disp_size[0]))
@@ -149,11 +162,17 @@ class SensorManager:
                 camera_bp.set_attribute(key, sensor_options[key])
 
             camera = self.world.spawn_actor(camera_bp, transform, attach_to=attached)
-            camera.listen(self.save_rgb_image)
+            if sensor_type == 'xRGBCamera':
+                if chk:
+                    with open(f"{self.fn}/{self.fid}/path.txt", 'a+') as f:
+                        f.write("Infra Camera: " + str(transform) + "\n")
+                camera.listen(self.save_rgb_image_x)
+            else:
+                camera.listen(self.save_rgb_image_v)
 
             return camera
 
-        elif sensor_type == "SemanticCamera":
+        elif (sensor_type == "xSemanticCamera") or (sensor_type == "vSemanticCamera"):
             camera_bp = self.world.get_blueprint_library().find('sensor.camera.semantic_segmentation')
             disp_size = self.display_man.get_display_size()
             camera_bp.set_attribute('image_size_x', str(disp_size[0]))
@@ -163,9 +182,48 @@ class SensorManager:
                 camera_bp.set_attribute(key, sensor_options[key])
 
             camera = self.world.spawn_actor(camera_bp, transform, attach_to=attached)
-            camera.listen(self.save_semantic_image)
+            if sensor_type == "xSemanticCamera":
+                camera.listen(self.save_semantic_image_x)
+            else:
+                camera.listen(self.save_semantic_image_v)
 
             return camera
+
+        elif (sensor_type == "xDepthCamera") or (sensor_type == "vDepthCamera"):
+            camera_bp = self.world.get_blueprint_library().find('sensor.camera.depth')
+            disp_size = self.display_man.get_display_size()
+            camera_bp.set_attribute('image_size_x', str(disp_size[0]))
+            camera_bp.set_attribute('image_size_y', str(disp_size[1]))
+
+            for key in sensor_options:
+                camera_bp.set_attribute(key, sensor_options[key])
+
+            camera = self.world.spawn_actor(camera_bp, transform, attach_to=attached)
+            if sensor_type == "xDepthCamera":
+                camera.listen(self.save_depth_image_x)
+            else:
+                camera.listen(self.save_depth_image_v)
+
+            return camera
+
+        elif sensor_type == "xGBufferCamera" or sensor_type == "vGBufferCamera":
+            camera_bp = self.world.get_blueprint_library().find('sensor.camera.rgb')
+            print("Before setting attributes...")
+            camera_bp.set_attribute('image_size_x', str(1280 if 'width' not in kwargs else kwargs['width']))
+            camera_bp.set_attribute('image_size_y', str(720 if 'height' not in kwargs else kwargs['height']))
+            print("After setting attributes...")
+            print(sensor_options)
+
+            for key in sensor_options:
+                camera_bp.set_attribute(key, sensor_options[key])
+
+            print(f"Spawning GBuffer Camera {kwargs}, {camera_bp}")
+            camera = self.world.spawn_actor(camera_bp, transform, attach_to=attached)
+
+            gbuffer_name = kwargs['kwargs']['GBuffer']
+            print(self.get_gbuffer_id(gbuffer_name), self.get_gbuffer_function(gbuffer_name))
+            camera.listen_to_gbuffer(self.get_gbuffer_id(gbuffer_name), self.get_gbuffer_function(gbuffer_name))
+            print("After listening to g-buffer...")
 
         else:
             return None
@@ -173,6 +231,7 @@ class SensorManager:
     def get_sensor(self):
         return self.sensor
 
+    ############################################## save data ###################################################
     def save_rgb_image(self, image):
         t_start = self.timer.time()
 
@@ -180,16 +239,29 @@ class SensorManager:
         array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
         array = np.reshape(array, (image.height, image.width, 4))
         array = array[:, :, :3]
-        if chk:
-            cv2.imwrite(self.save_dir + "/{}/rgb/{}.png".format(self.fid, str(self.tics_processing)), array)
-
         array = array[:, :, ::-1]
+
         if self.display_man.render_enabled():
             self.surface = pygame.surfarray.make_surface(array.swapaxes(0, 1))
 
         t_end = self.timer.time()
-        self.time_processing += (t_end-t_start)
+        self.time_processing += (t_end - t_start)
         self.tics_processing += 1
+        return array
+
+    def save_rgb_image_x(self, image):
+        array = self.save_rgb_image(image)
+        array = array[:, :, ::-1]
+        if chk:
+            cv2.imwrite(self.fn + "/{}/rgb_x/{}.png".format(self.fid, str(self.tics_processing)), array)
+
+    def save_rgb_image_v(self, image):
+        array = self.save_rgb_image(image)
+        array = array[:, :, ::-1]
+        if chk:
+            cv2.imwrite(self.fn + "/{}/rgb_v/{}.png".format(self.fid, str(self.tics_processing)), array)
+            with open(f'{self.fn}/{self.fid}/path.txt', 'a+') as f:
+                f.write(str(self.tics_processing) + ": " + str(self.sensor.get_transform()) + "\n")
 
     def save_semantic_image(self, image):
         t_start = self.timer.time()
@@ -199,19 +271,169 @@ class SensorManager:
         array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
         array = np.reshape(array, (image.height, image.width, 4))
         array = array[:, :, :3]
-
-        if chk:
-            cv2.imwrite(self.save_dir + "/{}/mask/{}.png".format(self.fid, str(self.tics_processing)), array)
-        
         array = array[:, :, ::-1]
         if self.display_man.render_enabled():
             self.surface = pygame.surfarray.make_surface(array.swapaxes(0, 1))
 
         t_end = self.timer.time()
-        self.time_processing += (t_end-t_start)
+        self.time_processing += (t_end - t_start)
         self.tics_processing += 1
-    
+        return array
 
+    def save_semantic_image_x(self, image):
+        array = self.save_semantic_image(image)
+        array = array[:, :, ::-1]
+        if chk:
+            cv2.imwrite(self.fn + "/{}/mask_x/{}.png".format(self.fid, str(self.tics_processing)), array)
+
+    def save_semantic_image_v(self, image):
+        array = self.save_semantic_image(image)
+        array = array[:, :, ::-1]
+        if chk:
+            cv2.imwrite(self.fn + "/{}/mask_v/{}.png".format(self.fid, str(self.tics_processing)), array)
+
+    def save_depth_image(self, image):
+        t_start = self.timer.time()
+
+        # image.convert(carla.ColorConverter.LogarithmicDepth)
+        array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+        array = np.reshape(array, (image.height, image.width, 4))
+        array = array[:, :, :3]
+        array = array[:, :, ::-1]
+        if self.display_man.render_enabled():
+            self.surface = pygame.surfarray.make_surface(array.swapaxes(0, 1))
+
+        t_end = self.timer.time()
+        self.time_processing += (t_end - t_start)
+        self.tics_processing += 1
+        return array
+
+    def save_depth_image_x(self, image):
+        array = self.save_depth_image(image)
+        array = array[:, :, ::-1]
+        if chk:
+            cv2.imwrite(self.fn + "/{}/depth_x/{}.png".format(self.fid, str(self.tics_processing)), array)
+
+    def save_depth_image_v(self, image):
+        array = self.save_depth_image(image)
+        array = array[:, :, ::-1]
+        if chk:
+            cv2.imwrite(self.fn + "/{}/depth_v/{}.png".format(self.fid, str(self.tics_processing)), array)
+
+    # === G Buffers ===
+    def get_gbuffer_id(self, gbuffer_name):
+        return {
+            "SceneColor": 0,
+            "SceneDepth": 1,
+            "SceneStencil": 2,
+            "GBufferA": 3,
+            "GBufferB": 4,
+            "GBufferC": 5,
+            "GBufferD": 6,
+            "GBufferE": 7,
+            "GBufferF": 8,
+            "Velocity": 9,
+            "SSAO": 10,
+            "CustomDepth": 11,
+            "CustomStencil": 12
+        }[gbuffer_name]
+
+    def get_gbuffer_function(self, gbuffer_name):
+        gbuffer_name = "Save" + gbuffer_name + "Texture"
+        return {
+            "SaveSceneColorTexture": self.SaveSceneColorTexture,
+            "SaveSceneDepthTexture": self.SaveSceneDepthTexture,
+            "SaveSceneStencilTexture": self.SaveSceneStencilTexture,
+            "SaveGBufferATexture": self.SaveGBufferATexture,
+            "SaveGBufferBTexture": self.SaveGBufferBTexture,
+            "SaveGBufferCTexture": self.SaveGBufferCTexture,
+            "SaveGBufferDTexture": self.SaveGBufferDTexture,
+            "SaveGBufferETexture": self.SaveGBufferETexture,
+            "SaveGBufferFTexture": self.SaveGBufferFTexture,
+            "SaveVelocityTexture": self.SaveVelocityTexture,
+            "SaveSSAOTexture": self.SaveSSAOTexture,
+            "SaveCustomDepthTexture": self.SaveCustomDepthTexture,
+            "SaveCustomStencilTexture": self.SaveCustomStencilTexture,
+        }[gbuffer_name]
+
+    def SaveGBuffer(self, image):
+        t_start = self.timer.time()
+
+        # image.convert(carla.ColorConverter.LogarithmicDepth)
+        array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+        array = np.reshape(array, (image.height, image.width, 4))
+        array = array[:, :, :3]
+
+        t_end = self.timer.time()
+
+        self.time_processing += (t_end - t_start)
+        self.tics_processing += 1
+        return array
+
+    # TODO: change to functools::partial
+    def SaveSceneColorTexture(self, image):
+        t_start = self.timer.time()
+
+        # image.convert(carla.ColorConverter.LogarithmicDepth)
+        array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
+        array = np.reshape(array, (image.height, image.width, 4))
+        array = array[:, :, :3]
+
+        t_end = self.timer.time()
+
+        self.time_processing += (t_end - t_start)
+        self.tics_processing += 1
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneColor.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveSceneDepthTexture(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneDepth.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveSceneStencilTexture(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneStencil.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveGBufferATexture(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneGBufferA.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveGBufferBTexture(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneGBufferB.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveGBufferCTexture(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneGBufferC.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveGBufferDTexture(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneGBufferD.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveGBufferETexture(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneGBufferE.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveGBufferFTexture(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneGBufferF.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveVelocityTexture(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneVelocity.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveSSAOTexture(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneSSAO.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveCustomDepthTexture(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneCustomDepth.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveCustomStencilTexture(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneCustomStencil.png".format(self.fid, str(self.tics_processing)), array)
+
+    # === Operations ===
     def render(self):
         if self.surface is not None:
             offset = self.display_man.get_display_offset(self.display_pos)
@@ -220,7 +442,7 @@ class SensorManager:
     def destroy(self):
         self.sensor.destroy()
 
-from time import sleep
+
 def run_simulation(args, client):
     """This function performed one test run using the args parameters
     and connecting to the carla client passed.
@@ -234,30 +456,46 @@ def run_simulation(args, client):
     walkers_list = []
     all_id = []
     ob_list = []
-    client = carla.Client(args.host, args.port)
-    client.set_timeout(10.0)
+
+    # Commented by c7w, because this shadows the "client" object passed in
+    # client = carla.Client(args.host, args.port)
+    # client.set_timeout(10.0)
+
     synchronous_master = False
     random.seed(args.seed if args.seed is not None else int(time.time()))
 
+    world = client.get_world()
+    original_settings = world.get_settings()
     try:
 
         # Getting the world and
-        world = client.get_world()
         print(client.get_available_maps())
-        # weather manager
-        def static_weather(id):
-            if id == 1:
-                return carla.WeatherParameters(cloudiness=0.0, precipitation=0.0, fog_density=0.0, sun_altitude_angle=70.0)
-            elif id == 2:
-                return carla.WeatherParameters(cloudiness=0.0, precipitation=0.0, fog_density=40.0, sun_altitude_angle=70.0)
-            elif id == 3:
-                return carla.WeatherParameters(cloudiness=50.0, precipitation=80.0, fog_density=30.0, sun_altitude_angle=60.0)
-            else:
-                return carla.WeatherParameters(cloudiness=0.0, precipitation=0.0, fog_density=0.0, sun_altitude_angle=0.0)
 
-        print("weather id:", args.weather)
-        # weather = static_weather(randint(1,4))
-        weather = static_weather(1)
+        # Why the ** you Carla failed to load your own maps???
+        # embed()
+        # Directly copied from its documentation, still doesn't work :(
+        # world = client.load_world('Town03_Opt', carla.MapLayer.Buildings | carla.MapLayer.ParkedVehicles)
+
+        # weather manager
+        # def static_weather(id):
+        #     if id == 1:
+        #         return carla.WeatherParameters(cloudiness=0.0, precipitation=0.0, fog_density=0.0, sun_altitude_angle=70.0)
+        #     elif id == 2:
+        #         return carla.WeatherParameters(cloudiness=0.0, precipitation=0.0, fog_density=40.0, sun_altitude_angle=70.0)
+        #     elif id == 3:
+        #         return carla.WeatherParameters(cloudiness=50.0, precipitation=80.0, fog_density=30.0, sun_altitude_angle=60.0)
+        #     else:
+        #         return carla.WeatherParameters(cloudiness=0.0, precipitation=0.0, fog_density=0.0, sun_altitude_angle=0.0)
+
+
+        # print("weather id:", args.weather)
+        # weather = static_weather(args.weather)
+        args.cloudiness = float(args.cloudiness)
+        args.precipitation = float(args.precipitation)
+        args.fog_density = float(args.fog_density)
+        args.sun_altitude_angle = float(args.sun_altitude_angle)
+
+        weather = carla.WeatherParameters(cloudiness=args.cloudiness, precipitation=args.precipitation, fog_density=args.fog_density, sun_altitude_angle=args.sun_altitude_angle)
         world.set_weather(weather)
 
         traffic_manager = client.get_trafficmanager(args.tm_port)
@@ -270,8 +508,6 @@ def run_simulation(args, client):
         if args.seed is not None:
             traffic_manager.set_random_device_seed(args.seed)
 
-        original_settings = world.get_settings()
-
         settings = world.get_settings()
         if args.sync:
             # traffic_manager = client.get_trafficmanager(8000)
@@ -280,50 +516,213 @@ def run_simulation(args, client):
             settings.fixed_delta_seconds = 0.05
             world.apply_settings(settings)
 
+        # embed()
+
         # Instanciating the vehicle to which we attached the sensors
         bp = world.get_blueprint_library().filter('charger_2020')[0]
-        # embed()
-        spawn_point_id = random.randint(0, len(world.get_map().get_spawn_points())-1)
-        # spawn_point_id = 81
+        # while True:
+        #     spawn_point_id = random.randint(0, len(world.get_map().get_spawn_points()) - 1)
+        #     spawn_point = world.get_map().get_spawn_points()[spawn_point_id]
+        #     if angle_filter(spawn_point.rotation.yaw):
+        #         break
+        # spawn_point_id = 141
+        # spawn_point = world.get_map().get_spawn_points()[spawn_point_id]
+        # # id: 141 spawn_point: Transform(Location(x=65.235275, y=13.414804, z=0.600000), Rotation(pitch=0.000000, yaw=-179.840790, roll=0.000000))
+        # spawn_point = carla.Transform(
+        #         carla.Location(x=70.235275, y=13.414804, z=0.600000),
+        #         carla.Rotation(pitch=0.000000, yaw=-179.840790, roll=0.000000),
+        #     )
+        print(world.get_map().get_spawn_points().__len__())
+        spawn_point_id = int(args.spawn_point)
         spawn_point = world.get_map().get_spawn_points()[spawn_point_id]
-        # embed()   
+
         print("id:", spawn_point_id, "spawn_point:", spawn_point)
-        print(spawn_point.rotation)
-        vehicle = world.spawn_actor(bp, carla.Transform(carla.Location(x=spawn_point.location.x, y=spawn_point.location.y, z=0.1), spawn_point.rotation))
+        vehicle = world.spawn_actor(bp, spawn_point)
         vehicles_list.append(vehicle)
         vehicle.set_autopilot(True)
 
+        # set location and posture of infra sensors
+        anomaly_distance = random.randint(90, 90)
+        camera_distance = random.randint(anomaly_distance + 10, anomaly_distance + 10)
+        camera_yaw = round(spawn_point.rotation.yaw + 180) % 360
+        camera_pitch = -random.randint(15, 15)
+
+        calib = 0
+        if spawn_point.rotation.yaw < 45 and spawn_point.rotation.yaw > -45:
+            infra_sensor_pos = carla.Transform(
+                # carla.Location(x=spawn_point.location.x + camera_distance, y=spawn_point.location.y, z=4),
+                carla.Location(x=spawn_point.location.x + camera_distance, y=spawn_point.location.y, z=4),
+                carla.Rotation(pitch=camera_pitch, yaw=camera_yaw, roll=0.000000),
+            )
+        elif spawn_point.rotation.yaw > 45 and spawn_point.rotation.yaw < 135:
+            infra_sensor_pos = carla.Transform(
+                carla.Location(x=spawn_point.location.x, y=spawn_point.location.y + camera_distance, z=4),
+                carla.Rotation(pitch=camera_pitch, yaw=camera_yaw, roll=0.000000),
+            )
+        elif spawn_point.rotation.yaw > 135 or spawn_point.rotation.yaw < -135:
+            infra_sensor_pos = carla.Transform(
+                carla.Location(x=spawn_point.location.x - camera_distance, y=spawn_point.location.y, z=4),
+                carla.Rotation(pitch=camera_pitch, yaw=camera_yaw, roll=0.000000),
+            )
+        elif spawn_point.rotation.yaw < -45 and spawn_point.rotation.yaw > -135:
+            infra_sensor_pos = carla.Transform(
+                carla.Location(x=spawn_point.location.x, y=spawn_point.location.y - camera_distance, z=4),
+                carla.Rotation(pitch=camera_pitch, yaw=camera_yaw, roll=0.000000),
+            )
+
+        # infra_sensor_pos = carla.Transform(
+        #     carla.Location(x=-35, y=16.414804, z=4),
+        #     carla.Rotation(pitch=camera_pitch, yaw=0, roll=0.000000),
+        # )
+        # infra_sensor_pos = carla.Transform(carla.Location(x=-45, y=90, z=5), carla.Rotation(pitch=0.000000, yaw=-90, roll=0.000000))
+
         # Display Manager organize all the sensors an its display in a window
         # If can easily configure the grid and the total window size
-        grid_size = [2, 1]
-        display_manager = DisplayManager(grid_size=grid_size, window_size=[args.width*grid_size[1], args.height*grid_size[0]])
+        grid_size = [3, 2]
+        display_manager = DisplayManager(grid_size=grid_size, window_size=[args.width * grid_size[1], args.height * grid_size[0]])
 
         # Then, SensorManager can be used to spawn RGBCamera, LiDARs and SemanticLiDARs as needed
-        # and assign each of them to a grid position, 
-        SensorManager(world, display_manager, 'RGBCamera', carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)), 
-                      vehicle, {}, display_pos=[0, 0], save_dir=args.save_dir, fid=args.idx)
-        SensorManager(world, display_manager, 'SemanticCamera', carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)), 
-                      vehicle, {}, display_pos=[1, 0], save_dir=args.save_dir, fid=args.idx)
+        # and assign each of them to a grid position,
+        fid = path_generator(args.file_dir)
+
+        # Write Parameters here!
+        with open(Path(args.file_dir) / Path(fid) / 'config.json', 'w+') as f:
+            f.write(json.dumps(args.__dict__, indent=4))
+
+        SensorManager(world,
+                      display_manager,
+                      'vRGBCamera',
+                      carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)),
+                      vehicle, {},
+                      display_pos=[0, 0],
+                      file_dir=args.file_dir,
+                      fid=fid)
+        SensorManager(world,
+                      display_manager,
+                      'vSemanticCamera',
+                      carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)),
+                      vehicle, {},
+                      display_pos=[1, 0],
+                      file_dir=args.file_dir,
+                      fid=fid)
+        SensorManager(world,
+                      display_manager,
+                      'vDepthCamera',
+                      carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)),
+                      vehicle, {},
+                      display_pos=[2, 0],
+                      file_dir=args.file_dir,
+                      fid=fid)
+
+        gbuffer_enabled_list = ["SceneColor", "SceneDepth", "GBufferA", "GBufferB", "GBufferC", "GBufferD"]
+        # gbuffer_enabled_list = ["GBufferA"]
+        for gbuffer_name in gbuffer_enabled_list:
+            SensorManager(world,
+                          None,
+                          'vGBufferCamera',
+                          carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)),
+                          vehicle, {},
+                          display_pos=[2,1],
+                          file_dir=args.file_dir,
+                          fid=fid,
+                          GBuffer=gbuffer_name)
+
+        # Disable road sensors currently
+        # SensorManager(world, display_manager, 'xRGBCamera', infra_sensor_pos, None, {}, display_pos=[0, 1], file_dir=args.file_dir, fid=fid)
+        # SensorManager(world, display_manager, 'xSemanticCamera', infra_sensor_pos, None, {}, display_pos=[1, 1], file_dir=args.file_dir, fid=fid)
+        # SensorManager(world, display_manager, 'xDepthCamera', infra_sensor_pos, None, {}, display_pos=[2, 1], file_dir=args.file_dir, fid=fid)
         #######################################################################################################################################################
         # # generate obstacle
 
-        # # embed()
-        # # ob_bp = world.get_blueprint_library().find('static.prop.bottle')
-        # ob_bp = world.get_blueprint_library().find('static.prop.container')
-        # # for i in world.get_map().get_spawn_points():
-        # #     ob_list.append(world.spawn_actor(ob_bp, i))
-        # distance = randint(30, 45)
-        # print(f"distance: {distance}")
+        # embed()
+        anomaly_object_type = random.randint(0, 5)
+        anomaly_object_type = 7
+        # yaw = random.random() * 1820 - 90
+        # yaw = 0
+        yaw = 45
+        if anomaly_object_type == 0:  # container
+            parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
+            ob_bp = world.get_blueprint_library().find('static.prop.container')
+        elif anomaly_object_type == 1:  # Motor helmet
+            parameters = {'z': 0.25, 'pitch': 0., 'yaw': yaw, 'roll': 0.}
+            ob_bp = world.get_blueprint_library().find('static.prop.motorhelmet')
+        elif anomaly_object_type == 2:  # Guitar case
+            parameters = {'z': 0.07, 'pitch': 0., 'yaw': yaw, 'roll': 90.}
+            ob_bp = world.get_blueprint_library().find('static.prop.guitarcase')
+        elif anomaly_object_type == 3:  # Shopping bag
+            parameters = {'z': 0.04, 'pitch': 0., 'yaw': yaw, 'roll': 99.}
+            ob_bp = world.get_blueprint_library().find('static.prop.shoppingbag')
+        elif anomaly_object_type == 4:  # Shopping cart
+            parameters = {'z': 1.08, 'pitch': 0., 'yaw': yaw, 'roll': 0.}
+            ob_bp = world.get_blueprint_library().find('static.prop.shoppingcart')
+        elif anomaly_object_type == 5:  # Lying tree
+            parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 90.}
+            ob_bp = world.get_blueprint_library().find('static.prop.tree')
+        elif anomaly_object_type == 6:  # Lying tree
+            parameters = {'z': 3., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
+            ob_bp = world.get_blueprint_library().find('static.prop.lod')
+        elif anomaly_object_type == 7:  # Lying tree
+            parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
+            ob_bp = world.get_blueprint_library().find('static.prop.swingcouch')
+        elif anomaly_object_type == 8: # Secfence 3
+            parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
+            ob_bp = world.get_blueprint_library().find('static.prop.secfence')
+        elif anomaly_object_type == 9: # Secfence 1
+            parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
+            ob_bp = world.get_blueprint_library().find('static.prop.secfence1')
+        elif anomaly_object_type == 10: # Secfence 2
+            parameters = {'z': 0, 'pitch': 90., 'yaw': yaw, 'roll': 0.}
+            ob_bp = world.get_blueprint_library().find('static.prop.secfence2')
+        elif anomaly_object_type == 11: # Guardrail
+            parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
+            ob_bp = world.get_blueprint_library().find('static.prop.guardrail')
+        elif anomaly_object_type == 12: # Ball (with issues)
+            parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
+            ob_bp = world.get_blueprint_library().find('static.prop.ball')
+        elif anomaly_object_type == 13: # Water drums
+            parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
+            ob_bp = world.get_blueprint_library().find('static.prop.waterdrums')
+        elif anomaly_object_type == 14: # Plastic Chair
+            parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
+            ob_bp = world.get_blueprint_library().find('static.prop.plasticchair')
+        elif anomaly_object_type == 15: # Plastic Table
+            parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
+            ob_bp = world.get_blueprint_library().find('static.prop.plastictable')
+        # Generate anomaly items
+        # print('debug!!', spawn_point.rotation.yaw)
         # if spawn_point.rotation.yaw < 45 and spawn_point.rotation.yaw > -45:
-        #     ob = world.spawn_actor(ob_bp, carla.Transform(carla.Location(x=spawn_point.location.x + distance, y=spawn_point.location.y, z=0)))
+        #     ob = world.spawn_actor(
+        #         ob_bp,
+        #         carla.Transform(
+        #             carla.Location(x=spawn_point.location.x + anomaly_distance, y=spawn_point.location.y + random.random() * 2 - 1 - calib,
+        #                            z=parameters['z']),
+        #             carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
+        #         ))
         # elif spawn_point.rotation.yaw > 45 and spawn_point.rotation.yaw < 135:
-        #     ob = world.spawn_actor(ob_bp, carla.Transform(carla.Location(x=spawn_point.location.x, y=spawn_point.location.y + distance, z=0)))
+        #     ob = world.spawn_actor(
+        #         ob_bp,
+        #         carla.Transform(
+        #             carla.Location(x=spawn_point.location.x + random.random() * 2 - 1 - calib, y=spawn_point.location.y + anomaly_distance,
+        #                            z=parameters['z']),
+        #             carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
+        #         ))
         # elif spawn_point.rotation.yaw > 135 or spawn_point.rotation.yaw < -135:
-        #     ob = world.spawn_actor(ob_bp, carla.Transform(carla.Location(x=spawn_point.location.x - distance, y=spawn_point.location.y, z=0)))
+        #     ob = world.spawn_actor(
+        #         ob_bp,
+        #         carla.Transform(
+        #             carla.Location(x=spawn_point.location.x - anomaly_distance, y=spawn_point.location.y + random.random() * 2 - 1 + calib,
+        #                            z=parameters['z']),
+        #             carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
+        #         ))
         # elif spawn_point.rotation.yaw < -45 and spawn_point.rotation.yaw > -135:
-        #     ob = world.spawn_actor(ob_bp, carla.Transform(carla.Location(x=spawn_point.location.x, y=spawn_point.location.y - distance, z=0)))
+        #     ob = world.spawn_actor(
+        #         ob_bp,
+        #         carla.Transform(
+        #             carla.Location(x=spawn_point.location.x + random.random() * 2 - 1 + calib, y=spawn_point.location.y - anomaly_distance,
+        #                            z=parameters['z']),
+        #             carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
+        #         ))
         # ob_list.append(ob)
-        # print(ob.id)
 
         if args.no_rendering:
             settings.no_rendering_mode = True
@@ -381,8 +780,7 @@ def run_simulation(args, client):
                 blueprint.set_attribute('role_name', 'autopilot')
 
             # spawn the cars and set their autopilot and light state all together
-            batch.append(SpawnActor(blueprint, transform)
-                .then(SetAutopilot(FutureActor, True, traffic_manager.get_port())))
+            batch.append(SpawnActor(blueprint, transform).then(SetAutopilot(FutureActor, True, traffic_manager.get_port())))
 
         for response in client.apply_batch_sync(batch, synchronous_master):
             if response.error:
@@ -400,8 +798,8 @@ def run_simulation(args, client):
         # Spawn Walkers
         # -------------
         # some settings
-        percentagePedestriansRunning = 0.2      # how many pedestrians will run
-        percentagePedestriansCrossing = 0.5     # how many pedestrians will walk through the road
+        percentagePedestriansRunning = 0.2  # how many pedestrians will run
+        percentagePedestriansCrossing = 0.5  # how many pedestrians will walk through the road
         if args.seedw:
             world.set_pedestrians_seed(args.seedw)
             random.seed(args.seedw)
@@ -474,9 +872,14 @@ def run_simulation(args, client):
             # set walk to random point
             all_actors[i].go_to_location(world.get_random_location_from_navigation())
             # max speed
-            all_actors[i].set_max_speed(float(walker_speed[int(i/2)]))
+            all_actors[i].set_max_speed(float(walker_speed[int(i / 2)]))
 
         print('spawned %d vehicles and %d walkers, press Ctrl+C to exit.' % (len(vehicles_list), len(walkers_list)))
+
+        traffic_list = world.get_actors().filter('*traffic_light*')
+        for tf in traffic_list:
+            tf.set_state(carla.TrafficLightState.Green)
+            tf.freeze(True)
 
         # Example of how to use Traffic Manager parameters
         traffic_manager.global_percentage_speed_difference(30.0)
@@ -484,11 +887,11 @@ def run_simulation(args, client):
         #Simulation loop
         call_exit = False
         time_init_sim = timer.time()
-        for i in tqdm(range(45)):
-        # while True:
+        for i in tqdm(range(200)):
             # Carla Tick
             if args.sync:
                 world.tick()
+                time.sleep(0.4)  # You may adjust this according to your PC's processing speed
             else:
                 world.wait_for_tick()
 
@@ -505,9 +908,10 @@ def run_simulation(args, client):
 
             if call_exit:
                 break
+    except BaseException as e:
+        print(e)
 
     finally:
-        sleep(1)
         if display_manager:
             display_manager.destroy()
 
@@ -528,6 +932,8 @@ def run_simulation(args, client):
         client.apply_batch([carla.command.DestroyActor(x) for x in ob_list])
 
         world.apply_settings(original_settings)
+
+
 
 def get_actor_blueprints(world, filter, generation):
     # embed()
@@ -555,40 +961,16 @@ def get_actor_blueprints(world, filter, generation):
         return []
 
 
-def main(idx=None):
-    argparser = argparse.ArgumentParser(
-        description='CARLA Sensor tutorial')
-    argparser.add_argument(
-        '--save-dir',
-        type=str,
-        default='new'
-    )
-    argparser.add_argument(
-        '--host',
-        metavar='H',
-        default='localhost',
-        help='IP of the host server (default: 127.0.0.1)')
-    argparser.add_argument(
-        '-p', '--port',
-        metavar='P',
-        default=2000,
-        type=int,
-        help='TCP port to listen to (default: 2000)')
-    argparser.add_argument(
-        '--sync',
-        action='store_true',
-        help='Synchronous mode execution')
-    argparser.add_argument(
-        '--async',
-        dest='sync',
-        action='store_false',
-        help='Asynchronous mode execution')
+def main(args, Targs=None):
+    args = args[1:]
+    print(args)
+    argparser = argparse.ArgumentParser(description='CARLA Sensor tutorial')
+    argparser.add_argument('--host', metavar='H', default='localhost', help='IP of the host server (default: 127.0.0.1)')
+    argparser.add_argument('-p', '--port', metavar='P', default=2000, type=int, help='TCP port to listen to (default: 2000)')
+    argparser.add_argument('--sync', action='store_true', help='Synchronous mode execution')
+    argparser.add_argument('--async', dest='sync', action='store_false', help='Asynchronous mode execution')
     argparser.set_defaults(sync=True)
-    argparser.add_argument(
-        '--res',
-        metavar='WIDTHxHEIGHT',
-        default='1280x720',
-        help='window resolution (default: 1280x720)')
+    argparser.add_argument('--res', metavar='WIDTHxHEIGHT', default='1280x720', help='window resolution (default: 1280x720)')
     argparser.add_argument(
         '--weather',
         metavar='WEATHER',
@@ -596,97 +978,62 @@ def main(idx=None):
         # weather list: []
         help='weather (default: rainy day)')
 
-    argparser.add_argument(
-        '-n', '--number-of-vehicles',
-        metavar='N',
-        default=0,
-        type=int,
-        help='Number of vehicles (default: 10)')
-    argparser.add_argument(
-        '-w', '--number-of-walkers',
-        metavar='W',
-        default=0,
-        type=int,
-        help='Number of walkers (default: 10)')
-    argparser.add_argument(
-        '--safe',
-        action='store_true',
-        help='Avoid spawning vehicles prone to accidents')
-    argparser.add_argument(
-        '--filterv',
-        metavar='PATTERN',
-        default='vehicle.*',
-        help='Filter vehicle model (default: "vehicle.*")')
-    argparser.add_argument(
-        '--generationv',
-        metavar='G',
-        default='All',
-        help='restrict to certain vehicle generation (values: "1","2","All" - default: "All")')
-    argparser.add_argument(
-        '--filterw',
-        metavar='PATTERN',
-        default='walker.pedestrian.*',
-        help='Filter pedestrian type (default: "walker.pedestrian.*")')
-    argparser.add_argument(
-        '--generationw',
-        metavar='G',
-        default='2',
-        help='restrict to certain pedestrian generation (values: "1","2","All" - default: "2")')
-    argparser.add_argument(
-        '--tm-port',
-        metavar='P',
-        default=8000,
-        type=int,
-        help='Port to communicate with TM (default: 8000)')
-    argparser.add_argument(
-        '--asynch',
-        action='store_true',
-        help='Activate asynchronous mode execution')
-    argparser.add_argument(
-        '--hybrid',
-        action='store_true',
-        help='Activate hybrid mode for Traffic Manager')
-    argparser.add_argument(
-        '-s', '--seed',
-        metavar='S',
-        type=int,
-        help='Set random device seed and deterministic mode for Traffic Manager')
-    argparser.add_argument(
-        '--seedw',
-        metavar='S',
-        default=0,
-        type=int,
-        help='Set the seed for pedestrians module')
-    argparser.add_argument(
-        '--car-lights-on',
-        action='store_true',
-        default=False,
-        help='Enable automatic car light management')
-    argparser.add_argument(
-        '--hero',
-        action='store_true',
-        default=False,
-        help='Set one of the vehicles as hero')
-    argparser.add_argument(
-        '--respawn',
-        action='store_true',
-        default=False,
-        help='Automatically respawn dormant vehicles (only in large maps)')
-    argparser.add_argument(
-        '--no-rendering',
-        action='store_true',
-        default=False,
-        help='Activate no rendering mode')
+    argparser.add_argument('-n', '--number-of-vehicles', metavar='N', default=0, type=int, help='Number of vehicles (default: 10)')
+    argparser.add_argument('-w', '--number-of-walkers', metavar='W', default=0, type=int, help='Number of walkers (default: 10)')
+    argparser.add_argument('--safe', action='store_true', help='Avoid spawning vehicles prone to accidents')
+    argparser.add_argument('--filterv', metavar='PATTERN', default='vehicle.*', help='Filter vehicle model (default: "vehicle.*")')
+    argparser.add_argument('--generationv',
+                           metavar='G',
+                           default='All',
+                           help='restrict to certain vehicle generation (values: "1","2","All" - default: "All")')
+    argparser.add_argument('--filterw',
+                           metavar='PATTERN',
+                           default='walker.pedestrian.*',
+                           help='Filter pedestrian type (default: "walker.pedestrian.*")')
+    argparser.add_argument('--generationw',
+                           metavar='G',
+                           default='2',
+                           help='restrict to certain pedestrian generation (values: "1","2","All" - default: "2")')
+    argparser.add_argument('--tm-port', metavar='P', default=8000, type=int, help='Port to communicate with TM (default: 8000)')
+    argparser.add_argument('--asynch', action='store_true', help='Activate asynchronous mode execution')
+    argparser.add_argument('--hybrid', action='store_true', help='Activate hybrid mode for Traffic Manager')
+    argparser.add_argument('-s', '--seed', metavar='S', type=int, help='Set random device seed and deterministic mode for Traffic Manager')
+    argparser.add_argument('--seedw', metavar='S', default=0, type=int, help='Set the seed for pedestrians module')
+    argparser.add_argument('--car-lights-on', action='store_true', default=False, help='Enable automatic car light management')
+    argparser.add_argument('--hero', action='store_true', default=False, help='Set one of the vehicles as hero')
+    argparser.add_argument('--respawn', action='store_true', default=False, help='Automatically respawn dormant vehicles (only in large maps)')
+    argparser.add_argument('--no-rendering', action='store_true', default=False, help='Activate no rendering mode')
+    argparser.add_argument('--file-dir', default='test', help='IP of the host server (default: 127.0.0.1)')
 
-    args = argparser.parse_args()
-    if idx is not None:
-        args.idx = path_generator(args.save_dir)
+    # Hyper parameters for each dataset!
+    argparser.add_argument('--cloudiness', '-w1', default='0.0', help='One of the weather properties')
+    argparser.add_argument('--precipitation', '-w2', default='0.0', help='One of the weather properties')
+    argparser.add_argument('--fog-density', '-w3', default='0.0', help='One of the weather properties')
+    argparser.add_argument('--sun-altitude-angle', '-w4', default='70.0', help='One of the weather properties')
+    argparser.add_argument('--spawn-point', default='10', help='Ego vehicle spawn point properties')
+    argparser.add_argument('--map', default='/Game/Carla/Maps/Town10HD_Opt', help='One of the weather properties')
+
+
+    args = argparser.parse_args(args)
+    if Targs:
+        for key, val in Targs.__dict__.items():
+            args.__dict__[key] = val
+    print(args)
+
+
+
 
     args.width, args.height = [int(x) for x in args.res.split('x')]
 
     logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.INFO)
 
     try:
+
+        # Try start Carla server... 
+        server_process = subprocess.Popen(Path.cwd() / "../carla/Unreal/CarlaUE4/ExportPackages/LinuxNoEditor/CarlaUE4.sh", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # Wait for server process to get ready :(
+        time.sleep(10)
+
         client = carla.Client(args.host, args.port)
         client.set_timeout(5.0)
 
@@ -695,9 +1042,5 @@ def main(idx=None):
     except KeyboardInterrupt:
         print('\nCancelled by user. Bye!')
 
-from time import sleep
-
 if __name__ == '__main__':
-    for i in range(1000):
-        main(i)
-        sleep(1)
+    main(sys.argv)
