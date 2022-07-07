@@ -49,6 +49,7 @@ def path_generator(fn):
     os.makedirs(os.path.join(fn, fid, 'depth_x'), exist_ok=True)
     os.makedirs(os.path.join(fn, fid, 'depth_v'), exist_ok=True)
     os.makedirs(os.path.join(fn, fid, 'gbuffer_v'), exist_ok=True)
+    os.makedirs(os.path.join(fn, fid, 'gbuffer_x'), exist_ok=True)
     return fid
 
 
@@ -221,8 +222,8 @@ class SensorManager:
             camera = self.world.spawn_actor(camera_bp, transform, attach_to=attached)
 
             gbuffer_name = kwargs['kwargs']['GBuffer']
-            print(self.get_gbuffer_id(gbuffer_name), self.get_gbuffer_function(gbuffer_name))
-            camera.listen_to_gbuffer(self.get_gbuffer_id(gbuffer_name), self.get_gbuffer_function(gbuffer_name))
+            print(self.get_gbuffer_id(gbuffer_name), self.get_gbuffer_function(gbuffer_name, sensor_type))
+            camera.listen_to_gbuffer(self.get_gbuffer_id(gbuffer_name), self.get_gbuffer_function(gbuffer_name, sensor_type))
             print("After listening to g-buffer...")
 
         else:
@@ -338,23 +339,41 @@ class SensorManager:
             "CustomStencil": 12
         }[gbuffer_name]
 
-    def get_gbuffer_function(self, gbuffer_name):
-        gbuffer_name = "Save" + gbuffer_name + "Texture"
-        return {
-            "SaveSceneColorTexture": self.SaveSceneColorTexture,
-            "SaveSceneDepthTexture": self.SaveSceneDepthTexture,
-            "SaveSceneStencilTexture": self.SaveSceneStencilTexture,
-            "SaveGBufferATexture": self.SaveGBufferATexture,
-            "SaveGBufferBTexture": self.SaveGBufferBTexture,
-            "SaveGBufferCTexture": self.SaveGBufferCTexture,
-            "SaveGBufferDTexture": self.SaveGBufferDTexture,
-            "SaveGBufferETexture": self.SaveGBufferETexture,
-            "SaveGBufferFTexture": self.SaveGBufferFTexture,
-            "SaveVelocityTexture": self.SaveVelocityTexture,
-            "SaveSSAOTexture": self.SaveSSAOTexture,
-            "SaveCustomDepthTexture": self.SaveCustomDepthTexture,
-            "SaveCustomStencilTexture": self.SaveCustomStencilTexture,
-        }[gbuffer_name]
+    def get_gbuffer_function(self, gbuffer_name, sensor_type):
+        if sensor_type[0] == "v":
+            gbuffer_name = "Save" + gbuffer_name + "Texture"
+            return {
+                "SaveSceneColorTexture": self.SaveSceneColorTexture,
+                "SaveSceneDepthTexture": self.SaveSceneDepthTexture,
+                "SaveSceneStencilTexture": self.SaveSceneStencilTexture,
+                "SaveGBufferATexture": self.SaveGBufferATexture,
+                "SaveGBufferBTexture": self.SaveGBufferBTexture,
+                "SaveGBufferCTexture": self.SaveGBufferCTexture,
+                "SaveGBufferDTexture": self.SaveGBufferDTexture,
+                "SaveGBufferETexture": self.SaveGBufferETexture,
+                "SaveGBufferFTexture": self.SaveGBufferFTexture,
+                "SaveVelocityTexture": self.SaveVelocityTexture,
+                "SaveSSAOTexture": self.SaveSSAOTexture,
+                "SaveCustomDepthTexture": self.SaveCustomDepthTexture,
+                "SaveCustomStencilTexture": self.SaveCustomStencilTexture,
+            }[gbuffer_name]
+        else:
+            gbuffer_name = "Save" + gbuffer_name + "Texture"
+            return {
+                "SaveSceneColorTexture": self.SaveSceneColorTextureX,
+                "SaveSceneDepthTexture": self.SaveSceneDepthTextureX,
+                "SaveSceneStencilTexture": self.SaveSceneStencilTextureX,
+                "SaveGBufferATexture": self.SaveGBufferATextureX,
+                "SaveGBufferBTexture": self.SaveGBufferBTextureX,
+                "SaveGBufferCTexture": self.SaveGBufferCTextureX,
+                "SaveGBufferDTexture": self.SaveGBufferDTextureX,
+                "SaveGBufferETexture": self.SaveGBufferETextureX,
+                "SaveGBufferFTexture": self.SaveGBufferFTextureX,
+                "SaveVelocityTexture": self.SaveVelocityTextureX,
+                "SaveSSAOTexture": self.SaveSSAOTextureX,
+                "SaveCustomDepthTexture": self.SaveCustomDepthTextureX,
+                "SaveCustomStencilTexture": self.SaveCustomStencilTextureX,
+            }[gbuffer_name]
 
     def SaveGBuffer(self, image):
         t_start = self.timer.time()
@@ -372,17 +391,7 @@ class SensorManager:
 
     # TODO: change to functools::partial
     def SaveSceneColorTexture(self, image):
-        t_start = self.timer.time()
-
-        # image.convert(carla.ColorConverter.LogarithmicDepth)
-        array = np.frombuffer(image.raw_data, dtype=np.dtype("uint8"))
-        array = np.reshape(array, (image.height, image.width, 4))
-        array = array[:, :, :3]
-
-        t_end = self.timer.time()
-
-        self.time_processing += (t_end - t_start)
-        self.tics_processing += 1
+        array = self.SaveGBuffer(image)
         cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneColor.png".format(self.fid, str(self.tics_processing)), array)
 
     def SaveSceneDepthTexture(self, image):
@@ -432,6 +441,58 @@ class SensorManager:
     def SaveCustomStencilTexture(self, image):
         array = self.SaveGBuffer(image)
         cv2.imwrite(self.fn + "/{}/gbuffer_v/{}-SceneCustomStencil.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveSceneColorTextureX(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_x/{}-SceneColor.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveSceneDepthTextureX(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_x/{}-SceneDepth.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveSceneStencilTextureX(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_x/{}-SceneStencil.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveGBufferATextureX(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_x/{}-SceneGBufferA.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveGBufferBTextureX(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_x/{}-SceneGBufferB.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveGBufferCTextureX(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_x/{}-SceneGBufferC.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveGBufferDTextureX(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_x/{}-SceneGBufferD.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveGBufferETextureX(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_x/{}-SceneGBufferE.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveGBufferFTextureX(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_x/{}-SceneGBufferF.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveVelocityTextureX(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_x/{}-SceneVelocity.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveSSAOTextureX(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_x/{}-SceneSSAO.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveCustomDepthTextureX(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_x/{}-SceneCustomDepth.png".format(self.fid, str(self.tics_processing)), array)
+
+    def SaveCustomStencilTextureX(self, image):
+        array = self.SaveGBuffer(image)
+        cv2.imwrite(self.fn + "/{}/gbuffer_x/{}-SceneCustomStencil.png".format(self.fid, str(self.tics_processing)), array)
 
     # === Operations ===
     def render(self):
@@ -542,8 +603,9 @@ def run_simulation(args, client):
         vehicle.set_autopilot(True)
 
         # set location and posture of infra sensors
-        anomaly_distance = random.randint(90, 90)
-        camera_distance = random.randint(anomaly_distance + 10, anomaly_distance + 10)
+        anomaly_distance = random.randint(40,40)
+        # camera_distance = random.randint(anomaly_distance + 10, anomaly_distance + 10)
+        camera_distance = 30.
         camera_yaw = round(spawn_point.rotation.yaw + 180) % 360
         camera_pitch = -random.randint(15, 15)
 
@@ -605,14 +667,14 @@ def run_simulation(args, client):
                       display_pos=[1, 0],
                       file_dir=args.file_dir,
                       fid=fid)
-        SensorManager(world,
-                      display_manager,
-                      'vDepthCamera',
-                      carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)),
-                      vehicle, {},
-                      display_pos=[2, 0],
-                      file_dir=args.file_dir,
-                      fid=fid)
+        # SensorManager(world,
+        #               display_manager,
+        #               'vDepthCamera',
+        #               carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)),
+        #               vehicle, {},
+        #               display_pos=[2, 0],
+        #               file_dir=args.file_dir,
+        #               fid=fid)
 
         gbuffer_enabled_list = ["SceneColor", "SceneDepth", "GBufferA", "GBufferB", "GBufferC", "GBufferD"]
         # gbuffer_enabled_list = ["GBufferA"]
@@ -626,6 +688,15 @@ def run_simulation(args, client):
                           file_dir=args.file_dir,
                           fid=fid,
                           GBuffer=gbuffer_name)
+            # SensorManager(world,
+            #               None,
+            #               'xGBufferCamera',
+            #               infra_sensor_pos,
+            #               None, {},
+            #               display_pos=[2,1],
+            #               file_dir=args.file_dir,
+            #               fid=fid,
+            #               GBuffer=gbuffer_name)
 
         # Disable road sensors currently
         # SensorManager(world, display_manager, 'xRGBCamera', infra_sensor_pos, None, {}, display_pos=[0, 1], file_dir=args.file_dir, fid=fid)
@@ -635,11 +706,17 @@ def run_simulation(args, client):
         # # generate obstacle
 
         # embed()
-        anomaly_object_type = random.randint(0, 5)
-        anomaly_object_type = 7
+        anomaly_object_type = random.randint(7, 9)
+        # anomaly_object_type = 7
         # yaw = random.random() * 1820 - 90
-        # yaw = 0
-        yaw = 45
+        yaw = 0
+        # yaw = 45
+        """
+        @ Warning
+        TODO: These static items have gone through a name change when checking out new versions.
+        You may refer to `/home/ubuntu/tb5zhh/carla/carla/Unreal/CarlaUE4/Content/Carla/Config/Default.Package.json` for new names
+        Here I only changed obj id [0, 5).
+        """
         if anomaly_object_type == 0:  # container
             parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
             ob_bp = world.get_blueprint_library().find('static.prop.container')
@@ -688,41 +765,48 @@ def run_simulation(args, client):
         elif anomaly_object_type == 15: # Plastic Table
             parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
             ob_bp = world.get_blueprint_library().find('static.prop.plastictable')
+        
         # Generate anomaly items
-        # print('debug!!', spawn_point.rotation.yaw)
-        # if spawn_point.rotation.yaw < 45 and spawn_point.rotation.yaw > -45:
-        #     ob = world.spawn_actor(
-        #         ob_bp,
-        #         carla.Transform(
-        #             carla.Location(x=spawn_point.location.x + anomaly_distance, y=spawn_point.location.y + random.random() * 2 - 1 - calib,
-        #                            z=parameters['z']),
-        #             carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
-        #         ))
-        # elif spawn_point.rotation.yaw > 45 and spawn_point.rotation.yaw < 135:
-        #     ob = world.spawn_actor(
-        #         ob_bp,
-        #         carla.Transform(
-        #             carla.Location(x=spawn_point.location.x + random.random() * 2 - 1 - calib, y=spawn_point.location.y + anomaly_distance,
-        #                            z=parameters['z']),
-        #             carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
-        #         ))
-        # elif spawn_point.rotation.yaw > 135 or spawn_point.rotation.yaw < -135:
-        #     ob = world.spawn_actor(
-        #         ob_bp,
-        #         carla.Transform(
-        #             carla.Location(x=spawn_point.location.x - anomaly_distance, y=spawn_point.location.y + random.random() * 2 - 1 + calib,
-        #                            z=parameters['z']),
-        #             carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
-        #         ))
-        # elif spawn_point.rotation.yaw < -45 and spawn_point.rotation.yaw > -135:
-        #     ob = world.spawn_actor(
-        #         ob_bp,
-        #         carla.Transform(
-        #             carla.Location(x=spawn_point.location.x + random.random() * 2 - 1 + calib, y=spawn_point.location.y - anomaly_distance,
-        #                            z=parameters['z']),
-        #             carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
-        #         ))
-        # ob_list.append(ob)
+        if False:
+            print('debug!!', spawn_point.rotation.yaw)
+            if spawn_point.rotation.yaw < 45 and spawn_point.rotation.yaw > -45:
+                print(carla.Transform(
+                        carla.Location(x=spawn_point.location.x + anomaly_distance, y=spawn_point.location.y + random.random() * 2 - 1 - calib,
+                                    z=parameters['z']),
+                        carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
+                    ))
+                ob = world.spawn_actor(
+                    ob_bp,
+                    carla.Transform(
+                        carla.Location(x=spawn_point.location.x + anomaly_distance, y=spawn_point.location.y + random.random() * 2 - 1 - calib,
+                                    z=parameters['z']),
+                        carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
+                    ))
+            elif spawn_point.rotation.yaw > 45 and spawn_point.rotation.yaw < 135:
+                ob = world.spawn_actor(
+                    ob_bp,
+                    carla.Transform(
+                        carla.Location(x=spawn_point.location.x + random.random() * 2 - 1 - calib, y=spawn_point.location.y + anomaly_distance,
+                                    z=parameters['z']),
+                        carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
+                    ))
+            elif spawn_point.rotation.yaw > 135 or spawn_point.rotation.yaw < -135:
+                ob = world.spawn_actor(
+                    ob_bp,
+                    carla.Transform(
+                        carla.Location(x=spawn_point.location.x - anomaly_distance, y=spawn_point.location.y + random.random() * 2 - 1 + calib,
+                                    z=parameters['z']),
+                        carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
+                    ))
+            elif spawn_point.rotation.yaw < -45 and spawn_point.rotation.yaw > -135:
+                ob = world.spawn_actor(
+                    ob_bp,
+                    carla.Transform(
+                        carla.Location(x=spawn_point.location.x + random.random() * 2 - 1 + calib, y=spawn_point.location.y - anomaly_distance,
+                                    z=parameters['z']),
+                        carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
+                    ))
+            ob_list.append(ob)
 
         if args.no_rendering:
             settings.no_rendering_mode = True
@@ -782,17 +866,24 @@ def run_simulation(args, client):
             # spawn the cars and set their autopilot and light state all together
             batch.append(SpawnActor(blueprint, transform).then(SetAutopilot(FutureActor, True, traffic_manager.get_port())))
 
+        print("Before response ack")
         for response in client.apply_batch_sync(batch, synchronous_master):
             if response.error:
-                logging.error(response.error)
+                logging.error("[ERROR] " + response.error)
             else:
                 vehicles_list.append(response.actor_id)
 
         # Set automatic vehicle lights update if specified
         if args.car_lights_on:
-            all_vehicle_actors = world.get_actors(vehicles_list)
-            for actor in all_vehicle_actors:
-                traffic_manager.update_vehicle_lights(actor, True)
+            # all_vehicle_actors = world.get_actors(vehicles_list)
+            traffic_manager.update_vehicle_lights(vehicles_list[0], True)
+            for actor_idx in vehicles_list[1:]:
+                actor = world.get_actor(actor_idx)
+                try:
+                    traffic_manager.update_vehicle_lights(actor, True)
+                except Exception as e:
+                    logging.error(e)
+                    continue
 
         # -------------
         # Spawn Walkers
@@ -887,11 +978,11 @@ def run_simulation(args, client):
         #Simulation loop
         call_exit = False
         time_init_sim = timer.time()
-        for i in tqdm(range(200)):
+        for i in tqdm(range(250)):
             # Carla Tick
             if args.sync:
                 world.tick()
-                time.sleep(0.4)  # You may adjust this according to your PC's processing speed
+                time.sleep(.5)  # You may adjust this according to your PC's processing speed
             else:
                 world.wait_for_tick()
 
@@ -908,6 +999,7 @@ def run_simulation(args, client):
 
             if call_exit:
                 break
+        time.sleep(10.) 
     except BaseException as e:
         print(e)
 

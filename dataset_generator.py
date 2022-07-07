@@ -29,28 +29,38 @@ def my_iter():
     args = sys.argv
 
     import random
-    spawn_point = random.sample(range(155), 10) # 5
-    cloudiness = [0, 80] # 2
-    precipitation = [0, 80] # 2
-    fog_density = [0, 80] # 2
-    sun_altitude_angle = [-10, 30, 60] # 3
+    spawn_point = [20, 50, 90] # random.sample(range(155), 10) # 5
+    cloudiness = [0] # 2
+    precipitation = [0] # 2
+    fog_density = [0] # 2, []
+    sun_altitude_angle = [-10] # 3, [70]
 
-    cloudiness = precipitation = fog_density = [0, ]
-    sun_altitude_angle = [70, ]
+    # cloudiness = precipitation = fog_density = [0, ]
+    # sun_altitude_angle = [70, ]
 
-    n = [100, ] # 1
+    n = [60, ] # 1
     w  = [100, ] # 1
 
     Targs = Namespace()
 
     for config in itertools.product(spawn_point, cloudiness, precipitation, fog_density, sun_altitude_angle, n, w):
         Targs.spawn_point = config[0]
-        Targs.cloudiness = config[1]
-        Targs.precipitation = config[2]
-        Targs.fog_density = config[3]
+        
+        if config[2] == 0:
+            Targs.cloudiness, Targs.precipitation, Targs.fog_density = 0, 0, 0
+        elif config[2] == 1:
+            Targs.cloudiness, Targs.precipitation, Targs.fog_density = 0, 0, 50
+        elif config[2] == 2:
+            Targs.cloudiness, Targs.precipitation, Targs.fog_density = 0, 90, 20
+
+        
+        # Targs.cloudiness = config[1]
+        # Targs.precipitation = config[2]
+        # Targs.fog_density = config[3]
         Targs.sun_altitude_angle = config[4]
         Targs.number_of_vehicles = config[5]
         Targs.number_of_walkers = config[6]
+        Targs.car_lights_on = True
 
         Targs.file_dir = f"/media/ubuntu/c7wyyds/Carla/sp{config[0]}-cloud{config[1]}-pre{config[2]}-fog{config[3]}-sun{config[4]}-n{config[5]}-v{config[6]}"
 
