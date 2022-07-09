@@ -10,3 +10,4 @@
 test/
 generated/
 old_generate/
+.vscode/

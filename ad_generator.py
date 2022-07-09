@@ -42,14 +42,14 @@ def path_generator(fn):
     os.makedirs(fn, exist_ok=True)
     fid = str(len(os.listdir(fn)) + 1)
     os.makedirs(os.path.join(fn, fid), exist_ok=True)
-    os.makedirs(os.path.join(fn, fid, 'mask_x'), exist_ok=True)
+    # os.makedirs(os.path.join(fn, fid, 'mask_x'), exist_ok=True)
     os.makedirs(os.path.join(fn, fid, 'mask_v'), exist_ok=True)
-    os.makedirs(os.path.join(fn, fid, 'rgb_x'), exist_ok=True)
+    # os.makedirs(os.path.join(fn, fid, 'rgb_x'), exist_ok=True)
     os.makedirs(os.path.join(fn, fid, 'rgb_v'), exist_ok=True)
-    os.makedirs(os.path.join(fn, fid, 'depth_x'), exist_ok=True)
+    # os.makedirs(os.path.join(fn, fid, 'depth_x'), exist_ok=True)
     os.makedirs(os.path.join(fn, fid, 'depth_v'), exist_ok=True)
+    # os.makedirs(os.path.join(fn, fid, 'gbuffer_x'), exist_ok=True)
     os.makedirs(os.path.join(fn, fid, 'gbuffer_v'), exist_ok=True)
-    os.makedirs(os.path.join(fn, fid, 'gbuffer_x'), exist_ok=True)
     return fid
 
 
@@ -209,22 +209,16 @@ class SensorManager:
 
         elif sensor_type == "xGBufferCamera" or sensor_type == "vGBufferCamera":
             camera_bp = self.world.get_blueprint_library().find('sensor.camera.rgb')
-            print("Before setting attributes...")
-            camera_bp.set_attribute('image_size_x', str(1280 if 'width' not in kwargs else kwargs['width']))
-            camera_bp.set_attribute('image_size_y', str(720 if 'height' not in kwargs else kwargs['height']))
-            print("After setting attributes...")
-            print(sensor_options)
+            camera_bp.set_attribute('image_size_x', str(1920 if 'width' not in kwargs else kwargs['width']))
+            camera_bp.set_attribute('image_size_y', str(1080 if 'height' not in kwargs else kwargs['height']))
 
             for key in sensor_options:
                 camera_bp.set_attribute(key, sensor_options[key])
 
-            print(f"Spawning GBuffer Camera {kwargs}, {camera_bp}")
             camera = self.world.spawn_actor(camera_bp, transform, attach_to=attached)
 
             gbuffer_name = kwargs['kwargs']['GBuffer']
-            print(self.get_gbuffer_id(gbuffer_name), self.get_gbuffer_function(gbuffer_name, sensor_type))
             camera.listen_to_gbuffer(self.get_gbuffer_id(gbuffer_name), self.get_gbuffer_function(gbuffer_name, sensor_type))
-            print("After listening to g-buffer...")
 
         else:
             return None
@@ -505,6 +499,7 @@ class SensorManager:
 
 
 def run_simulation(args, client):
+    # raise Exception
     """This function performed one test run using the args parameters
     and connecting to the carla client passed.
     """
@@ -520,511 +515,491 @@ def run_simulation(args, client):
 
     # Commented by c7w, because this shadows the "client" object passed in
     # client = carla.Client(args.host, args.port)
-    # client.set_timeout(10.0)
+    # client.set_timeout(10.J0)
 
     synchronous_master = False
     random.seed(args.seed if args.seed is not None else int(time.time()))
 
-    world = client.get_world()
+    print(client.get_available_maps())
+    print(args.map)
+    world = client.load_world(args.map, carla.MapLayer.All)
     original_settings = world.get_settings()
-    try:
+    # try:
+    spawn_points = world.get_map().get_spawn_points()
+    number_of_spawn_points = len(spawn_points)
+    blueprints = get_actor_blueprints(world, args.filterv, args.generationv)
+    blueprintsWalkers = get_actor_blueprints(world, args.filterw, args.generationw)
 
-        # Getting the world and
-        print(client.get_available_maps())
+    if args.safe:
+        blueprints = [x for x in blueprints if int(x.get_attribute('number_of_wheels')) == 4]
+        blueprints = [x for x in blueprints if not x.id.endswith('microlino')]
+        blueprints = [x for x in blueprints if not x.id.endswith('carlacola')]
+        blueprints = [x for x in blueprints if not x.id.endswith('cybertruck')]
+        blueprints = [x for x in blueprints if not x.id.endswith('t2')]
+        blueprints = [x for x in blueprints if not x.id.endswith('sprinter')]
+        blueprints = [x for x in blueprints if not x.id.endswith('firetruck')]
+        blueprints = [x for x in blueprints if not x.id.endswith('ambulance')]
 
-        # Why the ** you Carla failed to load your own maps???
-        # embed()
-        # Directly copied from its documentation, still doesn't work :(
-        # world = client.load_world('Town03_Opt', carla.MapLayer.Buildings | carla.MapLayer.ParkedVehicles)
+    blueprints = sorted(blueprints, key=lambda bp: bp.id)
 
-        # weather manager
-        # def static_weather(id):
-        #     if id == 1:
-        #         return carla.WeatherParameters(cloudiness=0.0, precipitation=0.0, fog_density=0.0, sun_altitude_angle=70.0)
-        #     elif id == 2:
-        #         return carla.WeatherParameters(cloudiness=0.0, precipitation=0.0, fog_density=40.0, sun_altitude_angle=70.0)
-        #     elif id == 3:
-        #         return carla.WeatherParameters(cloudiness=50.0, precipitation=80.0, fog_density=30.0, sun_altitude_angle=60.0)
-        #     else:
-        #         return carla.WeatherParameters(cloudiness=0.0, precipitation=0.0, fog_density=0.0, sun_altitude_angle=0.0)
+    # Weather Settings
+    weather = carla.WeatherParameters(cloudiness=float(args.cloudiness),
+                                        precipitation=float(args.precipitation),
+                                        fog_density=float(args.fog_density),
+                                        sun_altitude_angle=float(args.sun_altitude_angle))
+    world.set_weather(weather)
 
+    # Traffic Settigns
+    traffic_manager = client.get_trafficmanager(args.tm_port)
+    traffic_manager.set_global_distance_to_leading_vehicle(2.5)
+    if args.respawn:
+        traffic_manager.set_respawn_dormant_vehicles(True)
+    if args.hybrid:
+        traffic_manager.set_hybrid_physics_mode(True)
+        traffic_manager.set_hybrid_physics_radius(70.0)
+    if args.seed is not None:
+        traffic_manager.set_random_device_seed(args.seed)
 
-        # print("weather id:", args.weather)
-        # weather = static_weather(args.weather)
-        args.cloudiness = float(args.cloudiness)
-        args.precipitation = float(args.precipitation)
-        args.fog_density = float(args.fog_density)
-        args.sun_altitude_angle = float(args.sun_altitude_angle)
-
-        weather = carla.WeatherParameters(cloudiness=args.cloudiness, precipitation=args.precipitation, fog_density=args.fog_density, sun_altitude_angle=args.sun_altitude_angle)
-        world.set_weather(weather)
-
-        traffic_manager = client.get_trafficmanager(args.tm_port)
-        traffic_manager.set_global_distance_to_leading_vehicle(2.5)
-        if args.respawn:
-            traffic_manager.set_respawn_dormant_vehicles(True)
-        if args.hybrid:
-            traffic_manager.set_hybrid_physics_mode(True)
-            traffic_manager.set_hybrid_physics_radius(70.0)
-        if args.seed is not None:
-            traffic_manager.set_random_device_seed(args.seed)
-
-        settings = world.get_settings()
-        if args.sync:
-            # traffic_manager = client.get_trafficmanager(8000)
-            traffic_manager.set_synchronous_mode(True)
-            settings.synchronous_mode = True
-            settings.fixed_delta_seconds = 0.05
-            world.apply_settings(settings)
-
-        # embed()
-
-        # Instanciating the vehicle to which we attached the sensors
-        bp = world.get_blueprint_library().filter('charger_2020')[0]
-        # while True:
-        #     spawn_point_id = random.randint(0, len(world.get_map().get_spawn_points()) - 1)
-        #     spawn_point = world.get_map().get_spawn_points()[spawn_point_id]
-        #     if angle_filter(spawn_point.rotation.yaw):
-        #         break
-        # spawn_point_id = 141
-        # spawn_point = world.get_map().get_spawn_points()[spawn_point_id]
-        # # id: 141 spawn_point: Transform(Location(x=65.235275, y=13.414804, z=0.600000), Rotation(pitch=0.000000, yaw=-179.840790, roll=0.000000))
-        # spawn_point = carla.Transform(
-        #         carla.Location(x=70.235275, y=13.414804, z=0.600000),
-        #         carla.Rotation(pitch=0.000000, yaw=-179.840790, roll=0.000000),
-        #     )
-        print(world.get_map().get_spawn_points().__len__())
-        spawn_point_id = int(args.spawn_point)
-        spawn_point = world.get_map().get_spawn_points()[spawn_point_id]
-
-        print("id:", spawn_point_id, "spawn_point:", spawn_point)
-        vehicle = world.spawn_actor(bp, spawn_point)
-        vehicles_list.append(vehicle)
-        vehicle.set_autopilot(True)
-
-        # set location and posture of infra sensors
-        anomaly_distance = random.randint(40,40)
-        # camera_distance = random.randint(anomaly_distance + 10, anomaly_distance + 10)
-        camera_distance = 30.
-        camera_yaw = round(spawn_point.rotation.yaw + 180) % 360
-        camera_pitch = -random.randint(15, 15)
-
-        calib = 0
-        if spawn_point.rotation.yaw < 45 and spawn_point.rotation.yaw > -45:
-            infra_sensor_pos = carla.Transform(
-                # carla.Location(x=spawn_point.location.x + camera_distance, y=spawn_point.location.y, z=4),
-                carla.Location(x=spawn_point.location.x + camera_distance, y=spawn_point.location.y, z=4),
-                carla.Rotation(pitch=camera_pitch, yaw=camera_yaw, roll=0.000000),
-            )
-        elif spawn_point.rotation.yaw > 45 and spawn_point.rotation.yaw < 135:
-            infra_sensor_pos = carla.Transform(
-                carla.Location(x=spawn_point.location.x, y=spawn_point.location.y + camera_distance, z=4),
-                carla.Rotation(pitch=camera_pitch, yaw=camera_yaw, roll=0.000000),
-            )
-        elif spawn_point.rotation.yaw > 135 or spawn_point.rotation.yaw < -135:
-            infra_sensor_pos = carla.Transform(
-                carla.Location(x=spawn_point.location.x - camera_distance, y=spawn_point.location.y, z=4),
-                carla.Rotation(pitch=camera_pitch, yaw=camera_yaw, roll=0.000000),
-            )
-        elif spawn_point.rotation.yaw < -45 and spawn_point.rotation.yaw > -135:
-            infra_sensor_pos = carla.Transform(
-                carla.Location(x=spawn_point.location.x, y=spawn_point.location.y - camera_distance, z=4),
-                carla.Rotation(pitch=camera_pitch, yaw=camera_yaw, roll=0.000000),
-            )
-
-        # infra_sensor_pos = carla.Transform(
-        #     carla.Location(x=-35, y=16.414804, z=4),
-        #     carla.Rotation(pitch=camera_pitch, yaw=0, roll=0.000000),
-        # )
-        # infra_sensor_pos = carla.Transform(carla.Location(x=-45, y=90, z=5), carla.Rotation(pitch=0.000000, yaw=-90, roll=0.000000))
-
-        # Display Manager organize all the sensors an its display in a window
-        # If can easily configure the grid and the total window size
-        grid_size = [3, 2]
-        display_manager = DisplayManager(grid_size=grid_size, window_size=[args.width * grid_size[1], args.height * grid_size[0]])
-
-        # Then, SensorManager can be used to spawn RGBCamera, LiDARs and SemanticLiDARs as needed
-        # and assign each of them to a grid position,
-        fid = path_generator(args.file_dir)
-
-        # Write Parameters here!
-        with open(Path(args.file_dir) / Path(fid) / 'config.json', 'w+') as f:
-            f.write(json.dumps(args.__dict__, indent=4))
-
-        SensorManager(world,
-                      display_manager,
-                      'vRGBCamera',
-                      carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)),
-                      vehicle, {},
-                      display_pos=[0, 0],
-                      file_dir=args.file_dir,
-                      fid=fid)
-        SensorManager(world,
-                      display_manager,
-                      'vSemanticCamera',
-                      carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)),
-                      vehicle, {},
-                      display_pos=[1, 0],
-                      file_dir=args.file_dir,
-                      fid=fid)
-        # SensorManager(world,
-        #               display_manager,
-        #               'vDepthCamera',
-        #               carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)),
-        #               vehicle, {},
-        #               display_pos=[2, 0],
-        #               file_dir=args.file_dir,
-        #               fid=fid)
-
-        gbuffer_enabled_list = ["SceneColor", "SceneDepth", "GBufferA", "GBufferB", "GBufferC", "GBufferD"]
-        # gbuffer_enabled_list = ["GBufferA"]
-        for gbuffer_name in gbuffer_enabled_list:
-            SensorManager(world,
-                          None,
-                          'vGBufferCamera',
-                          carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)),
-                          vehicle, {},
-                          display_pos=[2,1],
-                          file_dir=args.file_dir,
-                          fid=fid,
-                          GBuffer=gbuffer_name)
-            # SensorManager(world,
-            #               None,
-            #               'xGBufferCamera',
-            #               infra_sensor_pos,
-            #               None, {},
-            #               display_pos=[2,1],
-            #               file_dir=args.file_dir,
-            #               fid=fid,
-            #               GBuffer=gbuffer_name)
-
-        # Disable road sensors currently
-        # SensorManager(world, display_manager, 'xRGBCamera', infra_sensor_pos, None, {}, display_pos=[0, 1], file_dir=args.file_dir, fid=fid)
-        # SensorManager(world, display_manager, 'xSemanticCamera', infra_sensor_pos, None, {}, display_pos=[1, 1], file_dir=args.file_dir, fid=fid)
-        # SensorManager(world, display_manager, 'xDepthCamera', infra_sensor_pos, None, {}, display_pos=[2, 1], file_dir=args.file_dir, fid=fid)
-        #######################################################################################################################################################
-        # # generate obstacle
-
-        # embed()
-        anomaly_object_type = random.randint(7, 9)
-        # anomaly_object_type = 7
-        # yaw = random.random() * 1820 - 90
-        yaw = 0
-        # yaw = 45
-        """
-        @ Warning
-        TODO: These static items have gone through a name change when checking out new versions.
-        You may refer to `/home/ubuntu/tb5zhh/carla/carla/Unreal/CarlaUE4/Content/Carla/Config/Default.Package.json` for new names
-        Here I only changed obj id [0, 5).
-        """
-        if anomaly_object_type == 0:  # container
-            parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
-            ob_bp = world.get_blueprint_library().find('static.prop.container')
-        elif anomaly_object_type == 1:  # Motor helmet
-            parameters = {'z': 0.25, 'pitch': 0., 'yaw': yaw, 'roll': 0.}
-            ob_bp = world.get_blueprint_library().find('static.prop.motorhelmet')
-        elif anomaly_object_type == 2:  # Guitar case
-            parameters = {'z': 0.07, 'pitch': 0., 'yaw': yaw, 'roll': 90.}
-            ob_bp = world.get_blueprint_library().find('static.prop.guitarcase')
-        elif anomaly_object_type == 3:  # Shopping bag
-            parameters = {'z': 0.04, 'pitch': 0., 'yaw': yaw, 'roll': 99.}
-            ob_bp = world.get_blueprint_library().find('static.prop.shoppingbag')
-        elif anomaly_object_type == 4:  # Shopping cart
-            parameters = {'z': 1.08, 'pitch': 0., 'yaw': yaw, 'roll': 0.}
-            ob_bp = world.get_blueprint_library().find('static.prop.shoppingcart')
-        elif anomaly_object_type == 5:  # Lying tree
-            parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 90.}
-            ob_bp = world.get_blueprint_library().find('static.prop.tree')
-        elif anomaly_object_type == 6:  # Lying tree
-            parameters = {'z': 3., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
-            ob_bp = world.get_blueprint_library().find('static.prop.lod')
-        elif anomaly_object_type == 7:  # Lying tree
-            parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
-            ob_bp = world.get_blueprint_library().find('static.prop.swingcouch')
-        elif anomaly_object_type == 8: # Secfence 3
-            parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
-            ob_bp = world.get_blueprint_library().find('static.prop.secfence')
-        elif anomaly_object_type == 9: # Secfence 1
-            parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
-            ob_bp = world.get_blueprint_library().find('static.prop.secfence1')
-        elif anomaly_object_type == 10: # Secfence 2
-            parameters = {'z': 0, 'pitch': 90., 'yaw': yaw, 'roll': 0.}
-            ob_bp = world.get_blueprint_library().find('static.prop.secfence2')
-        elif anomaly_object_type == 11: # Guardrail
-            parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
-            ob_bp = world.get_blueprint_library().find('static.prop.guardrail')
-        elif anomaly_object_type == 12: # Ball (with issues)
-            parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
-            ob_bp = world.get_blueprint_library().find('static.prop.ball')
-        elif anomaly_object_type == 13: # Water drums
-            parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
-            ob_bp = world.get_blueprint_library().find('static.prop.waterdrums')
-        elif anomaly_object_type == 14: # Plastic Chair
-            parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
-            ob_bp = world.get_blueprint_library().find('static.prop.plasticchair')
-        elif anomaly_object_type == 15: # Plastic Table
-            parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
-            ob_bp = world.get_blueprint_library().find('static.prop.plastictable')
-        
-        # Generate anomaly items
-        if False:
-            print('debug!!', spawn_point.rotation.yaw)
-            if spawn_point.rotation.yaw < 45 and spawn_point.rotation.yaw > -45:
-                print(carla.Transform(
-                        carla.Location(x=spawn_point.location.x + anomaly_distance, y=spawn_point.location.y + random.random() * 2 - 1 - calib,
-                                    z=parameters['z']),
-                        carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
-                    ))
-                ob = world.spawn_actor(
-                    ob_bp,
-                    carla.Transform(
-                        carla.Location(x=spawn_point.location.x + anomaly_distance, y=spawn_point.location.y + random.random() * 2 - 1 - calib,
-                                    z=parameters['z']),
-                        carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
-                    ))
-            elif spawn_point.rotation.yaw > 45 and spawn_point.rotation.yaw < 135:
-                ob = world.spawn_actor(
-                    ob_bp,
-                    carla.Transform(
-                        carla.Location(x=spawn_point.location.x + random.random() * 2 - 1 - calib, y=spawn_point.location.y + anomaly_distance,
-                                    z=parameters['z']),
-                        carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
-                    ))
-            elif spawn_point.rotation.yaw > 135 or spawn_point.rotation.yaw < -135:
-                ob = world.spawn_actor(
-                    ob_bp,
-                    carla.Transform(
-                        carla.Location(x=spawn_point.location.x - anomaly_distance, y=spawn_point.location.y + random.random() * 2 - 1 + calib,
-                                    z=parameters['z']),
-                        carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
-                    ))
-            elif spawn_point.rotation.yaw < -45 and spawn_point.rotation.yaw > -135:
-                ob = world.spawn_actor(
-                    ob_bp,
-                    carla.Transform(
-                        carla.Location(x=spawn_point.location.x + random.random() * 2 - 1 + calib, y=spawn_point.location.y - anomaly_distance,
-                                    z=parameters['z']),
-                        carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
-                    ))
-            ob_list.append(ob)
-
-        if args.no_rendering:
-            settings.no_rendering_mode = True
+    settings = world.get_settings()
+    if args.sync:
+        # traffic_manager = client.get_trafficmanager(8000)
+        traffic_manager.set_synchronous_mode(True)
+        settings.synchronous_mode = True
+        settings.fixed_delta_seconds = 1 / 40
+        world.apply_settings(settings)
+    else:
+        traffic_manager.set_synchronous_mode(False)
+        settings.synchronous_mode = False
         world.apply_settings(settings)
 
-        blueprints = get_actor_blueprints(world, args.filterv, args.generationv)
-        blueprintsWalkers = get_actor_blueprints(world, args.filterw, args.generationw)
+    # Instanciating the vehicle to which we attached the sensors
+    bp = world.get_blueprint_library().filter('charger_2020')[0]
+    spawn_points = world.get_map().get_spawn_points()
+    if args.spawn_point is not None:
+        spawn_point_id = int(args.spawn_point)
+    else:
+        spawn_point_id = random.randint(0, 1048576 % len(spawn_points))
+    spawn_point = spawn_points[spawn_point_id]
+    print("id:", spawn_point_id, "spawn_point:", spawn_point)
+    vehicle = world.spawn_actor(bp, spawn_point)
+    vehicle.set_autopilot(True)
 
-        if args.safe:
-            blueprints = [x for x in blueprints if int(x.get_attribute('number_of_wheels')) == 4]
-            blueprints = [x for x in blueprints if not x.id.endswith('microlino')]
-            blueprints = [x for x in blueprints if not x.id.endswith('carlacola')]
-            blueprints = [x for x in blueprints if not x.id.endswith('cybertruck')]
-            blueprints = [x for x in blueprints if not x.id.endswith('t2')]
-            blueprints = [x for x in blueprints if not x.id.endswith('sprinter')]
-            blueprints = [x for x in blueprints if not x.id.endswith('firetruck')]
-            blueprints = [x for x in blueprints if not x.id.endswith('ambulance')]
+    # Display Manager organize all the sensors an its display in a window
+    # If can easily configure the grid and the total window size
+    grid_size = [3, 2]
+    display_manager = DisplayManager(grid_size=grid_size, window_size=[args.width * grid_size[1], args.height * grid_size[0]])
 
-        blueprints = sorted(blueprints, key=lambda bp: bp.id)
+    # Then, SensorManager can be used to spawn RGBCamera, LiDARs and SemanticLiDARs as needed
+    # and assign each of them to a grid position,
+    fid = path_generator(args.file_dir)
 
-        spawn_points = world.get_map().get_spawn_points()
-        number_of_spawn_points = len(spawn_points)
+    # Write Parameters here!
+    with open(Path(args.file_dir) / Path(fid) / 'config.json', 'w+') as f:
+        f.write(json.dumps(args.__dict__, indent=4))
 
-        if args.number_of_vehicles < number_of_spawn_points:
-            random.shuffle(spawn_points)
-        elif args.number_of_vehicles > number_of_spawn_points:
-            msg = 'requested %d vehicles, but could only find %d spawn points'
-            logging.warning(msg, args.number_of_vehicles, number_of_spawn_points)
-            args.number_of_vehicles = number_of_spawn_points
+    SensorManager(world,
+                    display_manager,
+                    'vRGBCamera',
+                    carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)),
+                    vehicle, {},
+                    display_pos=[0, 0],
+                    file_dir=args.file_dir,
+                    fid=fid)
+    SensorManager(world,
+                    display_manager,
+                    'vSemanticCamera',
+                    carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)),
+                    vehicle, {},
+                    display_pos=[0, 1],
+                    file_dir=args.file_dir,
+                    fid=fid)
+    SensorManager(world,
+                    display_manager,
+                    'vDepthCamera',
+                    carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)),
+                    vehicle, {},
+                    display_pos=[1, 0],
+                    file_dir=args.file_dir,
+                    fid=fid)
 
-        # @todo cannot import these directly.
-        SpawnActor = carla.command.SpawnActor
-        SetAutopilot = carla.command.SetAutopilot
-        FutureActor = carla.command.FutureActor
+    gbuffer_enabled_list = ["SceneColor", "SceneDepth", "GBufferA", "GBufferB", "GBufferC", "GBufferD"]
+    # gbuffer_enabled_list = ["GBufferA"]
+    for gbuffer_name in gbuffer_enabled_list:
+        SensorManager(world,
+                        None,
+                        'vGBufferCamera',
+                        carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)),
+                        vehicle, {},
+                        display_pos=[1, 1],
+                        file_dir=args.file_dir,
+                        fid=fid,
+                        GBuffer=gbuffer_name)
+        # SensorManager(world,
+        #               None,
+        #               'xGBufferCamera',
+        #               infra_sensor_pos,
+        #               None, {},
+        #               display_pos=[2,1],
+        #               file_dir=args.file_dir,
+        #               fid=fid,
+        #               GBuffer=gbuffer_name)
 
-        # --------------
-        # Spawn vehicles
-        # --------------
-        batch = []
-        hero = args.hero
-        for n, transform in enumerate(spawn_points):
-            if n >= args.number_of_vehicles:
-                break
-            blueprint = random.choice(blueprints)
-            if blueprint.has_attribute('color'):
-                color = random.choice(blueprint.get_attribute('color').recommended_values)
-                blueprint.set_attribute('color', color)
-            if blueprint.has_attribute('driver_id'):
-                driver_id = random.choice(blueprint.get_attribute('driver_id').recommended_values)
-                blueprint.set_attribute('driver_id', driver_id)
-            if hero:
-                blueprint.set_attribute('role_name', 'hero')
-                hero = False
+        # Disable road sensors currently
+        # SensorManager(world, display_manager, 'xRGBCamera', infra_sensor_pos, None, {}, display_pos=[0, 1], file_dir=
+        # args.number_of_vehicles = number_of_spawn_points
+
+    # @todo cannot import these directly.
+    SpawnActor = carla.command.SpawnActor
+    SetAutopilot = carla.command.SetAutopilot
+    FutureActor = carla.command.FutureActor
+    #######################################################################################################################################################
+    # generate obstacle
+
+    anomaly_distance = 40
+    anomaly_calib = 0
+    anomaly_object_type = args.anomaly_type
+    # anomaly_object_type = 7
+    yaw = random.random() * 180 - 90
+    # yaw = 0
+    # yaw = 45
+    """
+    @ Warning
+    TODO: These static items have gone through a name change when checking out new versions.
+    You may refer to `/home/ubuntu/tb5zhh/carla/carla/Unreal/CarlaUE4/Content/Carla/Config/Default.Package.json` for new names
+    Here I only changed obj id [0, 5).
+    """
+    if anomaly_object_type == 0:  # container
+        parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
+        ob_bp = world.get_blueprint_library().find('static.prop.container')
+    elif anomaly_object_type == 1:  # Motor helmet
+        parameters = {'z': 0.25, 'pitch': 0., 'yaw': yaw, 'roll': 0.}
+        ob_bp = world.get_blueprint_library().find('static.prop.motorhelmet')
+    elif anomaly_object_type == 2:  # Guitar case
+        parameters = {'z': 0.07, 'pitch': 0., 'yaw': yaw, 'roll': 90.}
+        ob_bp = world.get_blueprint_library().find('static.prop.guitarcase')
+    elif anomaly_object_type == 3:  # Shopping bag
+        parameters = {'z': 0.04, 'pitch': 0., 'yaw': yaw, 'roll': 99.}
+        ob_bp = world.get_blueprint_library().find('static.prop.shoppingbag')
+    elif anomaly_object_type == 4:  # Shopping cart
+        parameters = {'z': 1.08, 'pitch': 0., 'yaw': yaw, 'roll': 0.}
+        ob_bp = world.get_blueprint_library().find('static.prop.shoppingcart')
+    elif anomaly_object_type == 5:  # Lying tree
+        parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 90.}
+        ob_bp = world.get_blueprint_library().find('static.prop.tree')
+    elif anomaly_object_type == 6:  # Lying tree
+        parameters = {'z': 3., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
+        ob_bp = world.get_blueprint_library().find('static.prop.lod')
+    elif anomaly_object_type == 7:  # Lying tree
+        parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
+        ob_bp = world.get_blueprint_library().find('static.prop.swingcouch')
+    elif anomaly_object_type == 8:  # Secfence 3
+        parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
+        ob_bp = world.get_blueprint_library().find('static.prop.secfence')
+    elif anomaly_object_type == 9:  # Secfence 1
+        parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
+        ob_bp = world.get_blueprint_library().find('static.prop.secfence1')
+    elif anomaly_object_type == 10:  # Secfence 2
+        parameters = {'z': 0, 'pitch': 90., 'yaw': yaw, 'roll': 0.}
+        ob_bp = world.get_blueprint_library().find('static.prop.secfence2')
+    elif anomaly_object_type == 11:  # Guardrail
+        parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
+        ob_bp = world.get_blueprint_library().find('static.prop.guardrail')
+    elif anomaly_object_type == 12:  # Ball (with issues)
+        parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
+        ob_bp = world.get_blueprint_library().find('static.prop.ball')
+    elif anomaly_object_type == 13:  # Water drums
+        parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
+        ob_bp = world.get_blueprint_library().find('static.prop.waterdrums')
+    elif anomaly_object_type == 14:  # Plastic Chair
+        parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
+        ob_bp = world.get_blueprint_library().find('static.prop.plasticchair')
+    elif anomaly_object_type == 15:  # Plastic Table
+        parameters = {'z': 0., 'pitch': 0., 'yaw': yaw, 'roll': 0.}
+        ob_bp = world.get_blueprint_library().find('static.prop.plastictable')
+
+    # Generate anomaly items
+    if args.generate_anomaly:
+        if spawn_point.rotation.yaw < 45 and spawn_point.rotation.yaw > -45:
+            ob = world.spawn_actor(
+                ob_bp,
+                carla.Transform(
+                    carla.Location(x=spawn_point.location.x + anomaly_distance, y=spawn_point.location.y - anomaly_calib, z=parameters['z']),
+                    carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
+                ))
+        elif spawn_point.rotation.yaw > 45 and spawn_point.rotation.yaw < 135:
+            ob = world.spawn_actor(
+                ob_bp,
+                carla.Transform(
+                    carla.Location(x=spawn_point.location.x - anomaly_calib, y=spawn_point.location.y + anomaly_distance, z=parameters['z']),
+                    carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
+                ))
+        elif spawn_point.rotation.yaw > 135 or spawn_point.rotation.yaw < -135:
+            ob = world.spawn_actor(
+                ob_bp,
+                carla.Transform(
+                    carla.Location(x=spawn_point.location.x - anomaly_distance, y=spawn_point.location.y + anomaly_calib, z=parameters['z']),
+                    carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
+                ))
+        elif spawn_point.rotation.yaw < -45 and spawn_point.rotation.yaw > -135:
+            ob = world.spawn_actor(
+                ob_bp,
+                carla.Transform(
+                    carla.Location(x=spawn_point.location.x + anomaly_calib, y=spawn_point.location.y - anomaly_distance, z=parameters['z']),
+                    carla.Rotation(pitch=parameters['pitch'], yaw=parameters['yaw'], roll=parameters['roll']),
+                ))
+        ob_list.append(ob)
+    # --------------
+    # Spawn vehicles
+    # --------------
+    batch = []
+    hero = args.hero
+    for n, transform in enumerate(spawn_points):
+        if n >= args.number_of_vehicles:
+            break
+        blueprint = random.choice(blueprints)
+        if blueprint.has_attribute('color'):
+            color = random.choice(blueprint.get_attribute('color').recommended_values)
+            blueprint.set_attribute('color', color)
+        if blueprint.has_attribute('driver_id'):
+            driver_id = random.choice(blueprint.get_attribute('driver_id').recommended_values)
+            blueprint.set_attribute('driver_id', driver_id)
+        if hero:
+            blueprint.set_attribute('role_name', 'hero')
+            hero = False
+        else:
+            blueprint.set_attribute('role_name', 'autopilot')
+
+        # spawn the cars and set their autopilot and light state all together
+        batch.append(SpawnActor(blueprint, transform).then(SetAutopilot(FutureActor, True, traffic_manager.get_port())))
+
+    for response in client.apply_batch_sync(batch, synchronous_master):
+        if response.error:
+            logging.error("[ERROR] " + response.error)
+        else:
+            vehicles_list.append(response.actor_id)
+
+    # Set automatic vehicle lights update if specified
+    if args.car_lights_on:
+        # all_vehicle_actors = world.get_actors(vehicles_list)
+        traffic_manager.update_vehicle_lights(vehicle, True)
+        for actor_idx in vehicles_list:
+            actor = world.get_actor(actor_idx)
+            try:
+                traffic_manager.update_vehicle_lights(actor, True)
+            except Exception as e:
+                logging.error(e)
+                continue
+
+    # -------------
+    # Spawn Walkers
+    # -------------
+    # some settings
+    percentagePedestriansRunning = 0.2  # how many pedestrians will run
+    percentagePedestriansCrossing = 0.5  # how many pedestrians will walk through the road
+    if args.seedw:
+        world.set_pedestrians_seed(args.seedw)
+        random.seed(args.seedw)
+    # 1. take all the random locations to spawn args.file_dir, fid=fid)
+    # SensorManager(world, display_manager, 'xSemanticCamera', infra_sensor_pos, None, {}, display_pos=[1, 1], file_dir=args.file_dir, fid=fid)
+    # SensorManager(world, display_manager, 'xDepthCamera', infra_sensor_pos, None, {}, display_pos=[2, 1], file_dir=args.file_dir, fid=fid)
+
+    if args.no_rendering:
+        settings.no_rendering_mode = True
+    world.apply_settings(settings)
+
+    if args.number_of_vehicles < number_of_spawn_points:
+        random.shuffle(spawn_points)
+    elif args.number_of_vehicles > number_of_spawn_points:
+        msg = 'requested %d vehicles, but could only find %d spawn points'
+        logging.warning(msg, args.number_of_vehicles, number_of_spawn_points)
+        args.number_of_vehicles = number_of_spawn_points
+
+    # @todo cannot import these directly.
+    SpawnActor = carla.command.SpawnActor
+    SetAutopilot = carla.command.SetAutopilot
+    FutureActor = carla.command.FutureActor
+
+    # --------------
+    # Spawn vehicles
+    # --------------
+    batch = []
+    hero = args.hero
+    for n, transform in enumerate(spawn_points):
+        if n >= args.number_of_vehicles:
+            break
+        blueprint = random.choice(blueprints)
+        if blueprint.has_attribute('color'):
+            color = random.choice(blueprint.get_attribute('color').recommended_values)
+            blueprint.set_attribute('color', color)
+        if blueprint.has_attribute('driver_id'):
+            driver_id = random.choice(blueprint.get_attribute('driver_id').recommended_values)
+            blueprint.set_attribute('driver_id', driver_id)
+        if hero:
+            blueprint.set_attribute('role_name', 'hero')
+            hero = False
+        else:
+            blueprint.set_attribute('role_name', 'autopilot')
+
+        # spawn the cars and set their autopilot and light state all together
+        batch.append(SpawnActor(blueprint, transform).then(SetAutopilot(FutureActor, True, traffic_manager.get_port())))
+
+    for response in client.apply_batch_sync(batch, synchronous_master):
+        if response.error:
+            logging.error("[ERROR] " + response.error)
+        else:
+            vehicles_list.append(response.actor_id)
+
+    # Set automatic vehicle lights update if specified
+    if args.car_lights_on:
+        # all_vehicle_actors = world.get_actors(vehicles_list)
+        traffic_manager.update_vehicle_lights(vehicle, True)
+        for actor_idx in vehicles_list:
+            actor = world.get_actor(actor_idx)
+            try:
+                traffic_manager.update_vehicle_lights(actor, True)
+            except Exception as e:
+                logging.error(e)
+                continue
+
+    # -------------
+    # Spawn Walkers
+    # -------------
+    # some settings
+    percentagePedestriansRunning = 0.2  # how many pedestrians will run
+    percentagePedestriansCrossing = 0.5  # how many pedestrians will walk through the road
+    if args.seedw:
+        world.set_pedestrians_seed(args.seedw)
+        random.seed(args.seedw)
+    # 1. take all the random locations to spawn
+    spawn_points = []
+    for i in range(args.number_of_walkers):
+        spawn_point = carla.Transform()
+        loc = world.get_random_location_from_navigation()
+        if (loc != None):
+            spawn_point.location = loc
+            spawn_points.append(spawn_point)
+    # 2. we spawn the walker object
+    batch = []
+    walker_speed = []
+    for spawn_point in spawn_points:
+        walker_bp = random.choice(blueprintsWalkers)
+        # set as not invincible
+        if walker_bp.has_attribute('is_invincible'):
+            walker_bp.set_attribute('is_invincible', 'false')
+        # set the max speed
+        if walker_bp.has_attribute('speed'):
+            if (random.random() > percentagePedestriansRunning):
+                # walking
+                walker_speed.append(walker_bp.get_attribute('speed').recommended_values[1])
             else:
-                blueprint.set_attribute('role_name', 'autopilot')
+                # running
+                walker_speed.append(walker_bp.get_attribute('speed').recommended_values[2])
+        else:
+            walker_speed.append(0.0)
+        batch.append(SpawnActor(walker_bp, spawn_point))
+    results = client.apply_batch_sync(batch, True)
+    walker_speed2 = []
+    for i in range(len(results)):
+        if results[i].error:
+            logging.error(results[i].error)
+        else:
+            walkers_list.append({"id": results[i].actor_id})
+            walker_speed2.append(walker_speed[i])
+    walker_speed = walker_speed2
+    # 3. we spawn the walker controller
+    batch = []
+    walker_controller_bp = world.get_blueprint_library().find('controller.ai.walker')
+    for i in range(len(walkers_list)):
+        batch.append(SpawnActor(walker_controller_bp, carla.Transform(), walkers_list[i]["id"]))
+    results = client.apply_batch_sync(batch, True)
+    for i in range(len(results)):
+        if results[i].error:
+            logging.error(results[i].error)
+        else:
+            walkers_list[i]["con"] = results[i].actor_id
+    # 4. we put together the walkers and controllers id to get the objects from their id
+    for i in range(len(walkers_list)):
+        all_id.append(walkers_list[i]["con"])
+        all_id.append(walkers_list[i]["id"])
+    all_actors = world.get_actors(all_id)
 
-            # spawn the cars and set their autopilot and light state all together
-            batch.append(SpawnActor(blueprint, transform).then(SetAutopilot(FutureActor, True, traffic_manager.get_port())))
+    # wait for a tick to ensure client receives the last transform of the walkers we have just created
+    # if args.asynch or not synchronous_master:
+    #     world.wait_for_tick()
+    # else:
+    #     world.tick()
 
-        print("Before response ack")
-        for response in client.apply_batch_sync(batch, synchronous_master):
-            if response.error:
-                logging.error("[ERROR] " + response.error)
-            else:
-                vehicles_list.append(response.actor_id)
+    # 5. initialize each controller and set target to walk to (list is [controler, actor, controller, actor ...])
+    # set how many pedestrians can cross the road
+    world.set_pedestrians_cross_factor(percentagePedestriansCrossing)
+    for i in range(0, len(all_id), 2):
+        # start walker
+        all_actors[i].start()
+        # set walk to random point
+        all_actors[i].go_to_location(world.get_random_location_from_navigation())
+        # max speed
+        all_actors[i].set_max_speed(float(walker_speed[int(i / 2)]))
 
-        # Set automatic vehicle lights update if specified
-        if args.car_lights_on:
-            # all_vehicle_actors = world.get_actors(vehicles_list)
-            traffic_manager.update_vehicle_lights(vehicles_list[0], True)
-            for actor_idx in vehicles_list[1:]:
-                actor = world.get_actor(actor_idx)
-                try:
-                    traffic_manager.update_vehicle_lights(actor, True)
-                except Exception as e:
-                    logging.error(e)
-                    continue
+    print('spawned %d vehicles and %d walkers, press Ctrl+C to exit.' % (len(vehicles_list), len(walkers_list)))
 
-        # -------------
-        # Spawn Walkers
-        # -------------
-        # some settings
-        percentagePedestriansRunning = 0.2  # how many pedestrians will run
-        percentagePedestriansCrossing = 0.5  # how many pedestrians will walk through the road
-        if args.seedw:
-            world.set_pedestrians_seed(args.seedw)
-            random.seed(args.seedw)
-        # 1. take all the random locations to spawn
-        spawn_points = []
-        for i in range(args.number_of_walkers):
-            spawn_point = carla.Transform()
-            loc = world.get_random_location_from_navigation()
-            if (loc != None):
-                spawn_point.location = loc
-                spawn_points.append(spawn_point)
-        # 2. we spawn the walker object
-        batch = []
-        walker_speed = []
-        for spawn_point in spawn_points:
-            walker_bp = random.choice(blueprintsWalkers)
-            # set as not invincible
-            if walker_bp.has_attribute('is_invincible'):
-                walker_bp.set_attribute('is_invincible', 'false')
-            # set the max speed
-            if walker_bp.has_attribute('speed'):
-                if (random.random() > percentagePedestriansRunning):
-                    # walking
-                    walker_speed.append(walker_bp.get_attribute('speed').recommended_values[1])
-                else:
-                    # running
-                    walker_speed.append(walker_bp.get_attribute('speed').recommended_values[2])
-            else:
-                print("Walker has no speed")
-                walker_speed.append(0.0)
-            batch.append(SpawnActor(walker_bp, spawn_point))
-        results = client.apply_batch_sync(batch, True)
-        walker_speed2 = []
-        for i in range(len(results)):
-            if results[i].error:
-                logging.error(results[i].error)
-            else:
-                walkers_list.append({"id": results[i].actor_id})
-                walker_speed2.append(walker_speed[i])
-        walker_speed = walker_speed2
-        # 3. we spawn the walker controller
-        batch = []
-        walker_controller_bp = world.get_blueprint_library().find('controller.ai.walker')
-        for i in range(len(walkers_list)):
-            batch.append(SpawnActor(walker_controller_bp, carla.Transform(), walkers_list[i]["id"]))
-        results = client.apply_batch_sync(batch, True)
-        for i in range(len(results)):
-            if results[i].error:
-                logging.error(results[i].error)
-            else:
-                walkers_list[i]["con"] = results[i].actor_id
-        # 4. we put together the walkers and controllers id to get the objects from their id
-        for i in range(len(walkers_list)):
-            all_id.append(walkers_list[i]["con"])
-            all_id.append(walkers_list[i]["id"])
-        all_actors = world.get_actors(all_id)
 
-        # wait for a tick to ensure client receives the last transform of the walkers we have just created
-        # if args.asynch or not synchronous_master:
-        #     world.wait_for_tick()
-        # else:
-        #     world.tick()
+    traffic_list = world.get_actors().filter('*traffic_light*')
+    for tf in traffic_list:
+        tf.set_state(carla.TrafficLightState.Green)
+        tf.freeze(True)
 
-        # 5. initialize each controller and set target to walk to (list is [controler, actor, controller, actor ...])
-        # set how many pedestrians can cross the road
-        world.set_pedestrians_cross_factor(percentagePedestriansCrossing)
-        for i in range(0, len(all_id), 2):
-            # start walker
-            all_actors[i].start()
-            # set walk to random point
-            all_actors[i].go_to_location(world.get_random_location_from_navigation())
-            # max speed
-            all_actors[i].set_max_speed(float(walker_speed[int(i / 2)]))
+    # Example of how to use Traffic Manager parameters
+    traffic_manager.global_percentage_speed_difference(30.0)
 
-        print('spawned %d vehicles and %d walkers, press Ctrl+C to exit.' % (len(vehicles_list), len(walkers_list)))
+    #Simulation loop
+    call_exit = False
+    for i in tqdm(range(400)):
+        # Carla Tick
+        if args.sync:
+            world.tick()
+            # time.sleep(.5)  # You may adjust this according to your PC's processing speed
+        else:
+            world.wait_for_tick()
 
-        traffic_list = world.get_actors().filter('*traffic_light*')
-        for tf in traffic_list:
-            tf.set_state(carla.TrafficLightState.Green)
-            tf.freeze(True)
+        # Render received data
+        display_manager.render()
 
-        # Example of how to use Traffic Manager parameters
-        traffic_manager.global_percentage_speed_difference(30.0)
-
-        #Simulation loop
-        call_exit = False
-        time_init_sim = timer.time()
-        for i in tqdm(range(250)):
-            # Carla Tick
-            if args.sync:
-                world.tick()
-                time.sleep(.5)  # You may adjust this according to your PC's processing speed
-            else:
-                world.wait_for_tick()
-
-            # Render received data
-            display_manager.render()
-
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                call_exit = True
+            elif event.type == pygame.KEYDOWN:
+                if event.key == K_ESCAPE or event.key == K_q:
                     call_exit = True
-                elif event.type == pygame.KEYDOWN:
-                    if event.key == K_ESCAPE or event.key == K_q:
-                        call_exit = True
-                        break
+                    break
 
-            if call_exit:
-                break
-        time.sleep(10.) 
-    except BaseException as e:
-        print(e)
+        if call_exit:
+            break
+    time.sleep(10.)
+    # except BaseException as e:
+    #     print('Exception occurred!!!!!!')
+    #     print(e)
 
-    finally:
-        if display_manager:
-            display_manager.destroy()
+    # finally:
+    if display_manager:
+        display_manager.destroy()
 
-        if not args.asynch and synchronous_master:
-            settings = world.get_settings()
-            settings.synchronous_mode = False
-            settings.no_rendering_mode = False
-            settings.fixed_delta_seconds = None
-            world.apply_settings(settings)
+    if not args.sync and synchronous_master:
+        settings = world.get_settings()
+        settings.synchronous_mode = False
+        settings.no_rendering_mode = False
+        settings.fixed_delta_seconds = None
+        world.apply_settings(settings)
 
-        client.apply_batch([carla.command.DestroyActor(x) for x in vehicles_list])
+    client.apply_batch([carla.command.DestroyActor(x) for x in vehicles_list])
 
-        # stop walker controllers (list is [controller, actor, controller, actor ...])
-        for i in range(0, len(all_id), 2):
-            all_actors[i].stop()
+    # stop walker controllers (list is [controller, actor, controller, actor ...])
+    for i in range(0, len(all_id), 2):
+        all_actors[i].stop()
 
-        client.apply_batch([carla.command.DestroyActor(x) for x in all_id])
-        client.apply_batch([carla.command.DestroyActor(x) for x in ob_list])
+    client.apply_batch([carla.command.DestroyActor(x) for x in all_id])
+    client.apply_batch([carla.command.DestroyActor(x) for x in ob_list])
 
-        world.apply_settings(original_settings)
-
+    world.apply_settings(original_settings)
 
 
 def get_actor_blueprints(world, filter, generation):
@@ -1055,7 +1030,6 @@ def get_actor_blueprints(world, filter, generation):
 
 def main(args, Targs=None):
     args = args[1:]
-    print(args)
     argparser = argparse.ArgumentParser(description='CARLA Sensor tutorial')
     argparser.add_argument('--host', metavar='H', default='localhost', help='IP of the host server (default: 127.0.0.1)')
     argparser.add_argument('-p', '--port', metavar='P', default=2000, type=int, help='TCP port to listen to (default: 2000)')
@@ -1087,7 +1061,7 @@ def main(args, Targs=None):
                            default='2',
                            help='restrict to certain pedestrian generation (values: "1","2","All" - default: "2")')
     argparser.add_argument('--tm-port', metavar='P', default=8000, type=int, help='Port to communicate with TM (default: 8000)')
-    argparser.add_argument('--asynch', action='store_true', help='Activate asynchronous mode execution')
+    # argparser.add_argument('--asynch', action='store_true', help='Activate asynchronous mode execution')
     argparser.add_argument('--hybrid', action='store_true', help='Activate hybrid mode for Traffic Manager')
     argparser.add_argument('-s', '--seed', metavar='S', type=int, help='Set random device seed and deterministic mode for Traffic Manager')
     argparser.add_argument('--seedw', metavar='S', default=0, type=int, help='Set the seed for pedestrians module')
@@ -1105,34 +1079,30 @@ def main(args, Targs=None):
     argparser.add_argument('--spawn-point', default='10', help='Ego vehicle spawn point properties')
     argparser.add_argument('--map', default='/Game/Carla/Maps/Town10HD_Opt', help='One of the weather properties')
 
-
     args = argparser.parse_args(args)
     if Targs:
         for key, val in Targs.__dict__.items():
             args.__dict__[key] = val
-    print(args)
-
-
-
+    # print(args)
 
     args.width, args.height = [int(x) for x in args.res.split('x')]
 
     logging.basicConfig(format='%(levelname)s: %(message)s', level=logging.INFO)
 
-    try:
+    # try:
 
-        # Try start Carla server... 
-        server_process = subprocess.Popen(Path.cwd() / "../carla/Unreal/CarlaUE4/ExportPackages/LinuxNoEditor/CarlaUE4.sh", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        # Wait for server process to get ready :(
-        time.sleep(10)
+    # # Try start Carla server...
 
-        client = carla.Client(args.host, args.port)
-        client.set_timeout(5.0)
+    # Wait for server process to get ready :(
 
-        run_simulation(args, client)
+    client = carla.Client(args.host, args.port)
+    client.set_timeout(5.0)
 
-    except KeyboardInterrupt:
-        print('\nCancelled by user. Bye!')
+    run_simulation(args, client)
+
+    # except KeyboardInterrupt:
+    #     print('\nCancelled by user. Bye!')
+
 
 if __name__ == '__main__':
     main(sys.argv)
