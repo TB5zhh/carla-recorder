@@ -8,6 +8,7 @@ from multiprocessing import Process
 from matplotlib.style import available
 from ad_generator import main
 
+from config import *
 
 def kill_server():
     try:
@@ -104,7 +105,7 @@ def my_iter():
         # 120 * 600M = 0.12 * 600 G = 72 G
         while True:
             server_process = subprocess.Popen(
-                "/home/ubuntu/tb5zhh/carla/carla/Dist/CARLA_Shipping_0708-8-ga9ccf55e9-dirty/LinuxNoEditor/CarlaUE4.sh",
+                    CARLA_EXE,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL)
             print(params)
@@ -117,7 +118,6 @@ def my_iter():
             if process.exitcode == 0:
                 break
             print('Retrying...')
-
 
 
 if __name__ == "__main__":
