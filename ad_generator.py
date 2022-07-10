@@ -209,8 +209,9 @@ class SensorManager:
 
         elif sensor_type == "xGBufferCamera" or sensor_type == "vGBufferCamera":
             camera_bp = self.world.get_blueprint_library().find('sensor.camera.rgb')
-            camera_bp.set_attribute('image_size_x', str(1920 if 'width' not in kwargs else kwargs['width']))
-            camera_bp.set_attribute('image_size_y', str(1080 if 'height' not in kwargs else kwargs['height']))
+            disp_size = self.display_man.get_display_size()
+            camera_bp.set_attribute('image_size_x', str(disp_size[0]))
+            camera_bp.set_attribute('image_size_y', str(disp_size[1]))
 
             for key in sensor_options:
                 camera_bp.set_attribute(key, sensor_options[key])
@@ -220,8 +221,9 @@ class SensorManager:
             gbuffer_name = kwargs['kwargs']['GBuffer']
             camera.listen_to_gbuffer(self.get_gbuffer_id(gbuffer_name), self.get_gbuffer_function(gbuffer_name, sensor_type))
 
+            return camera
         else:
-            return None
+            assert False, sensor_type
 
     def get_sensor(self):
         return self.sensor
@@ -623,10 +625,9 @@ def run_simulation(args, client):
                     fid=fid)
 
     gbuffer_enabled_list = ["SceneColor", "SceneDepth", "GBufferA", "GBufferB", "GBufferC", "GBufferD"]
-    # gbuffer_enabled_list = ["GBufferA"]
     for gbuffer_name in gbuffer_enabled_list:
         SensorManager(world,
-                        None,
+                        display_manager,
                         'vGBufferCamera',
                         carla.Transform(carla.Location(x=0, z=2.4), carla.Rotation(yaw=+00)),
                         vehicle, {},
@@ -953,7 +954,7 @@ def run_simulation(args, client):
 
     #Simulation loop
     call_exit = False
-    for i in tqdm(range(400)):
+    for i in tqdm(range(100)):
         # Carla Tick
         if args.sync:
             world.tick()
@@ -1036,7 +1037,7 @@ def main(args, Targs=None):
     argparser.add_argument('--sync', action='store_true', help='Synchronous mode execution')
     argparser.add_argument('--async', dest='sync', action='store_false', help='Asynchronous mode execution')
     argparser.set_defaults(sync=True)
-    argparser.add_argument('--res', metavar='WIDTHxHEIGHT', default='1280x720', help='window resolution (default: 1280x720)')
+    argparser.add_argument('--res', metavar='WIDTHxHEIGHT', default='1920x1080', help='window resolution (default: 1920x1080)')
     argparser.add_argument(
         '--weather',
         metavar='WEATHER',

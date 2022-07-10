@@ -40,10 +40,10 @@ def my_iter():
     n = [30]  # 1
     w = [100]  # 1
 
-    available_maps = ['Town03', 'Town10HD', 'Town04', 'Town05']
-    spawn_point = [20, 30, 40, 50, 60, 70, 80]  # random.sample(range(155), 10) # 5
+    available_maps = ['Town10HD' ]
+    spawn_point = [20]  # random.sample(range(155), 10) # 5
 
-    anomaly_types = list(range(16))
+    anomaly_types = list(range(1))
     with_anomaly = [True]
     # cloudiness = precipitation = fog_density = [0, ]
     # sun_altitude_angle = [70, ]
@@ -96,8 +96,8 @@ def my_iter():
         Targs.anomaly_type = anomaly
 
         #Targs.file_dir = f"/media/ubuntu/c7wyyds/Carla/sp{config[0]}-cloud{config[1]}-pre{config[2]}-fog{config[3]}-sun{config[4]}-n{config[5]}-v{config[6]}"
-        Targs.file_dir = f"/home/ubuntu/tb5zhh/mount_tmp/anomaly_dataset/{anomaly}/{map}_{sp}/{with_ano}"
-
+        # Targs.file_dir = f"/home/ubuntu/tb5zhh/carla/recorder/anomaly_dataset_v0.1/{anomaly}/{map}_{sp}/{with_ano}"
+        Targs.file_dir = f"/media/ubuntu/0997C4D95A4FEE10/anomaly_dataset_v0.1.1"
         # 5 * 8 * 3 = 120
         # 120 * 600M = 0.12 * 600 G = 72 G
         while True:
@@ -115,14 +115,7 @@ def my_iter():
             if process.exitcode == 0:
                 break
             print('Retrying...')
-            # except KeyboardInterrupt as e:
-            #     kill_server()
-            #     return -1
-            # except Exception as e:
-            #     print(f'===> ERROR: {e}')
-            #     print('retrying...')
-            # finally:
-            #     # print('reach')
+
 
 
 if __name__ == "__main__":
