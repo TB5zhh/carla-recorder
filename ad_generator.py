@@ -567,7 +567,7 @@ def run_simulation(args, client):
         # traffic_manager = client.get_trafficmanager(8000)
         traffic_manager.set_synchronous_mode(True)
         settings.synchronous_mode = True
-        settings.fixed_delta_seconds = 1 / 40
+        settings.fixed_delta_seconds = args.frame_interval
         world.apply_settings(settings)
     else:
         traffic_manager.set_synchronous_mode(False)
@@ -954,7 +954,7 @@ def run_simulation(args, client):
 
     #Simulation loop
     call_exit = False
-    for i in tqdm(range(100)):
+    for i in tqdm(range(args.seq_length)):
         # Carla Tick
         if args.sync:
             world.tick()

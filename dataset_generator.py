@@ -40,8 +40,8 @@ def my_iter():
     n = [30]  # 1
     w = [100]  # 1
 
-    available_maps = ['Town10HD' ]
-    spawn_point = [20]  # random.sample(range(155), 10) # 5
+    available_maps = ['Town10HD']
+    spawn_point = [55]  # random.sample(range(155), 10) # 5
 
     anomaly_types = list(range(1))
     with_anomaly = [True]
@@ -94,6 +94,8 @@ def my_iter():
 
         Targs.generate_anomaly = with_ano
         Targs.anomaly_type = anomaly
+        Targs.seq_length = 400
+        Targs.frame_interval = 1 / 40
 
         #Targs.file_dir = f"/media/ubuntu/c7wyyds/Carla/sp{config[0]}-cloud{config[1]}-pre{config[2]}-fog{config[3]}-sun{config[4]}-n{config[5]}-v{config[6]}"
         # Targs.file_dir = f"/home/ubuntu/tb5zhh/carla/recorder/anomaly_dataset_v0.1/{anomaly}/{map}_{sp}/{with_ano}"
